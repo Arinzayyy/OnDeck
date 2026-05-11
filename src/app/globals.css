@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+      Ubuntu, Cantarell, sans-serif;
+  }
+}
+
+@layer components {
+  /* Calendar day cells */
+  .day-cell {
+    min-height: 90px;
+  }
+  @media (min-width: 640px) {
+    .day-cell {
+      min-height: 120px;
+    }
+  }
+  @media (min-width: 1024px) {
+    .day-cell {
+      min-height: 140px;
+    }
+  }
+
+  /* Shift status badges */
+  .badge-pending {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800;
+  }
+  .badge-approved {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-teal-100 text-teal-800;
+  }
+  .badge-cancelled {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800;
+  }
+  .badge-called-out {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800;
+  }
+}
