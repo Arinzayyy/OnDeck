@@ -2,12 +2,12 @@
  * Student Home — shows upcoming approved shifts + quick-book button.
  */
 import { getStudentFromCookies } from '@/lib/auth';
-
-export const dynamic = 'force-dynamic';
 import { createServerClient } from '@/lib/supabase/server';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { BookNowButton } from './BookNowButton';
 import type { Shift } from '@/lib/types';
+
+export const dynamic = 'force-dynamic';
 
 function formatDate(d: string) {
   return new Date(d + 'T00:00:00').toLocaleDateString('en-US', {
@@ -17,6 +17,12 @@ function formatDate(d: string) {
   });
 }
 
+function shiftHours(start: string, end: string): number {
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  return (eh * 60 + em - (sh * 60 + sm)) / 60;
+}
+
 export default async function StudentHomePage() {
   const student = await getStudentFromCookies();
   if (!student) return null;
@@ -24,17 +30,29 @@ export default async function StudentHomePage() {
   const db = createServerClient();
   const today = new Date().toISOString().slice(0, 10);
 
-  const { data: upcoming } = await db
-    .from('shifts')
-    .select('*')
-    .eq('student_id', student.sub)
-    .gte('date', today)
-    .in('status', ['pending', 'approved'])
-    .order('date')
-    .order('start_time')
-    .limit(10);
+  const [{ data: upcoming }, { data: allActive }] = await Promise.all([
+    db
+      .from('shifts')
+      .select('*')
+      .eq('student_id', student.sub)
+      .gte('date', today)
+      .in('status', ['pending', 'approved'])
+      .order('date')
+      .order('start_time')
+      .limit(10),
+    db
+      .from('shifts')
+      .select('start_time, end_time')
+      .eq('student_id', student.sub)
+      .in('status', ['approved', 'pending']),
+  ]);
 
   const shifts = (upcoming ?? []) as Shift[];
+
+  const totalHours = (allActive ?? []).reduce(
+    (sum, s) => sum + shiftHours(s.start_time, s.end_time),
+    0
+  );
 
   return (
     <div className="space-y-8">
@@ -47,6 +65,9 @@ export default async function StudentHomePage() {
           <p className="mt-1 text-sm text-gray-500">
             {student.program} · {student.cohort}
           </p>
+          <span className="mt-2 inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1 text-sm font-medium text-teal-700">
+            Total hours signed up: {totalHours.toFixed(1)}
+          </span>
         </div>
         <BookNowButton />
       </div>
