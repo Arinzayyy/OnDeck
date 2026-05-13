@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
 /**
  * POST /api/students
  * Admin-only: create a new student.
- * Body: { name, studentId, program?, cohort?, pin }
+ * Body: { firstName, lastName?, studentId, program?, cohort?, pin }
  */
 export async function POST(req: NextRequest) {
   const admin = await getAdminFromRequest(req);
@@ -68,14 +68,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
 
-  // ── Validate name ──────────────────────────────────────────────────────────
-  const name = (body.name ?? '').toString().trim();
-  if (name.length < 2 || name.length > 80) {
+  // ── Validate firstName / lastName ──────────────────────────────────────────
+  const firstName = (body.firstName ?? '').toString().trim();
+  if (firstName.length < 2 || firstName.length > 40) {
     return NextResponse.json(
-      { error: 'Name must be between 2 and 80 characters.', field: 'name' },
+      { error: 'First name must be between 2 and 40 characters.', field: 'firstName' },
       { status: 400 }
     );
   }
+
+  const lastName = (body.lastName ?? '').toString().trim();
+  if (lastName && (lastName.length < 1 || lastName.length > 40)) {
+    return NextResponse.json(
+      { error: 'Last name must be between 1 and 40 characters.', field: 'lastName' },
+      { status: 400 }
+    );
+  }
+
+  const name = firstName + (lastName ? ' ' + lastName : '');
 
   // ── Validate studentId ─────────────────────────────────────────────────────
   const studentId = (body.studentId ?? '').toString().trim().toUpperCase();

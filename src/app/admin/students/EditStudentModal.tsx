@@ -5,10 +5,11 @@ import { createPortal } from 'react-dom';
 import { useToast } from '@/components/ui/Toast';
 import type { StudentRow } from './StudentsTable';
 
-interface AddStudentModalProps {
+interface EditStudentModalProps {
   open: boolean;
+  student: StudentRow | null;
   onClose: () => void;
-  onAdded: (student: StudentRow) => void;
+  onUpdated: (student: StudentRow) => void;
 }
 
 interface FormState {
@@ -17,6 +18,7 @@ interface FormState {
   studentId: string;
   program: string;
   cohort: string;
+  resetPin: boolean;
   pin: string;
 }
 
@@ -29,31 +31,51 @@ interface FieldErrors {
   pin?: string;
 }
 
-const EMPTY_FORM: FormState = {
-  firstName: '',
-  lastName: '',
-  studentId: '',
-  program: '',
-  cohort: '',
-  pin: '',
-};
+function splitName(full: string): { firstName: string; lastName: string } {
+  const idx = full.indexOf(' ');
+  if (idx === -1) return { firstName: full, lastName: '' };
+  return { firstName: full.slice(0, idx), lastName: full.slice(idx + 1) };
+}
 
-export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps) {
+function randomPin(): string {
+  const arr = new Uint32Array(1);
+  crypto.getRandomValues(arr);
+  return String(1000 + (arr[0] % 9000));
+}
+
+export function EditStudentModal({ open, student, onClose, onUpdated }: EditStudentModalProps) {
   const { toast } = useToast();
   const firstNameRef = useRef<HTMLInputElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [form, setForm] = useState<FormState>({
+    firstName: '',
+    lastName: '',
+    studentId: '',
+    program: '',
+    cohort: '',
+    resetPin: false,
+    pin: '',
+  });
   const [errors, setErrors] = useState<FieldErrors>({});
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (open) {
-      setForm(EMPTY_FORM);
+    if (open && student) {
+      const { firstName, lastName } = splitName(student.name);
+      setForm({
+        firstName,
+        lastName,
+        studentId: student.student_id,
+        program: student.program ?? '',
+        cohort: student.cohort ?? '',
+        resetPin: false,
+        pin: '',
+      });
       setErrors({});
       setTimeout(() => firstNameRef.current?.focus(), 0);
     }
-  }, [open]);
+  }, [open, student]);
 
   useEffect(() => {
     if (!open) return;
@@ -73,43 +95,46 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
     onClose();
   }
 
-  function set(field: keyof FormState, value: string) {
+  function set<K extends keyof FormState>(field: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [field]: value }));
-    if (errors[field]) setErrors((prev) => ({ ...prev, [field]: undefined }));
+    if (field in errors) setErrors((prev) => ({ ...prev, [field]: undefined }));
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!student) return;
     setErrors({});
     setLoading(true);
 
     try {
-      const res = await fetch('/api/students', {
-        method: 'POST',
+      const body: Record<string, unknown> = {
+        firstName: form.firstName,
+        lastName: form.lastName,
+        studentId: form.studentId,
+        program: form.program,
+        cohort: form.cohort,
+      };
+      if (form.resetPin) {
+        body.pin = form.pin;
+      }
+
+      const res = await fetch(`/api/students/${student.id}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          firstName: form.firstName,
-          lastName: form.lastName,
-          studentId: form.studentId,
-          program: form.program,
-          cohort: form.cohort,
-          pin: form.pin,
-        }),
+        body: JSON.stringify(body),
       });
 
       const data = await res.json();
 
-      if (res.status === 201) {
-        const newRow: StudentRow = {
-          id: data.student.id,
+      if (res.ok) {
+        onUpdated({
+          ...student,
           name: data.student.name,
           student_id: data.student.student_id,
           program: data.student.program ?? null,
           cohort: data.student.cohort ?? null,
-          shift_counts: { total: 0, pending: 0, approved: 0, cancelled: 0, called_out: 0 },
-        };
-        onAdded(newRow);
-        toast(`Added ${data.student.name} to the roster.`, 'success');
+        });
+        toast(`Updated ${data.student.name}.`, 'success');
         handleClose();
         return;
       }
@@ -124,15 +149,15 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
         return;
       }
 
-      toast("Couldn't add student. Please try again.", 'error');
+      toast("Couldn't save changes. Please try again.", 'error');
     } catch {
-      toast("Couldn't add student. Please try again.", 'error');
+      toast("Couldn't save changes. Please try again.", 'error');
     } finally {
       setLoading(false);
     }
   }
 
-  if (!open) return null;
+  if (!open || !student) return null;
 
   return createPortal(
     <div
@@ -144,12 +169,12 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
         className="relative w-full max-w-lg rounded-xl bg-white shadow-xl"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="add-student-title"
+        aria-labelledby="edit-student-title"
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h2 id="add-student-title" className="text-lg font-semibold text-gray-900">
-            Add student
+          <h2 id="edit-student-title" className="text-lg font-semibold text-gray-900">
+            Edit student
           </h2>
           <button
             onClick={handleClose}
@@ -163,16 +188,15 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
           </button>
         </div>
 
-        {/* Body */}
         <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
           {/* First + Last name */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="as-first" className="mb-1 block text-sm font-medium text-gray-700">
+              <label htmlFor="es-first" className="mb-1 block text-sm font-medium text-gray-700">
                 First name <span className="text-red-500">*</span>
               </label>
               <input
-                id="as-first"
+                id="es-first"
                 ref={firstNameRef}
                 type="text"
                 value={form.firstName}
@@ -183,18 +207,15 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
                     ? 'border-red-400 focus:border-red-400 focus:ring-red-400'
                     : 'border-gray-300 focus:border-teal-500 focus:ring-teal-500'
                 }`}
-                placeholder="Jane"
               />
-              {errors.firstName && (
-                <p className="mt-1 text-xs text-red-600">{errors.firstName}</p>
-              )}
+              {errors.firstName && <p className="mt-1 text-xs text-red-600">{errors.firstName}</p>}
             </div>
             <div>
-              <label htmlFor="as-last" className="mb-1 block text-sm font-medium text-gray-700">
+              <label htmlFor="es-last" className="mb-1 block text-sm font-medium text-gray-700">
                 Last name
               </label>
               <input
-                id="as-last"
+                id="es-last"
                 type="text"
                 value={form.lastName}
                 onChange={(e) => set('lastName', e.target.value)}
@@ -203,21 +224,18 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
                     ? 'border-red-400 focus:border-red-400 focus:ring-red-400'
                     : 'border-gray-300 focus:border-teal-500 focus:ring-teal-500'
                 }`}
-                placeholder="Optional — can be added later"
               />
-              {errors.lastName && (
-                <p className="mt-1 text-xs text-red-600">{errors.lastName}</p>
-              )}
+              {errors.lastName && <p className="mt-1 text-xs text-red-600">{errors.lastName}</p>}
             </div>
           </div>
 
           {/* Student ID */}
           <div>
-            <label htmlFor="as-sid" className="mb-1 block text-sm font-medium text-gray-700">
+            <label htmlFor="es-sid" className="mb-1 block text-sm font-medium text-gray-700">
               Student ID <span className="text-red-500">*</span>
             </label>
             <input
-              id="as-sid"
+              id="es-sid"
               type="text"
               value={form.studentId}
               onChange={(e) => set('studentId', e.target.value.toUpperCase())}
@@ -227,86 +245,93 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
                   ? 'border-red-400 focus:border-red-400 focus:ring-red-400'
                   : 'border-gray-300 focus:border-teal-500 focus:ring-teal-500'
               }`}
-              placeholder="S006"
             />
-            {errors.studentId && (
+            {errors.studentId ? (
               <p className="mt-1 text-xs text-red-600">{errors.studentId}</p>
-            )}
-          </div>
-
-          {/* PIN */}
-          <div>
-            <label htmlFor="as-pin" className="mb-1 block text-sm font-medium text-gray-700">
-              4-digit PIN <span className="text-red-500">*</span>
-            </label>
-            <input
-              id="as-pin"
-              type="password"
-              value={form.pin}
-              onChange={(e) => set('pin', e.target.value.replace(/\D/g, '').slice(0, 4))}
-              required
-              inputMode="numeric"
-              maxLength={4}
-              pattern="\d{4}"
-              className={`w-full rounded-lg border px-3 py-2 font-mono text-sm focus:outline-none focus:ring-1 ${
-                errors.pin
-                  ? 'border-red-400 focus:border-red-400 focus:ring-red-400'
-                  : 'border-gray-300 focus:border-teal-500 focus:ring-teal-500'
-              }`}
-              placeholder="••••"
-            />
-            {errors.pin && (
-              <p className="mt-1 text-xs text-red-600">{errors.pin}</p>
+            ) : (
+              <p className="mt-1 text-xs text-gray-400">Changing this will affect the student&rsquo;s login.</p>
             )}
           </div>
 
           {/* Program + Cohort */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="as-program" className="mb-1 block text-sm font-medium text-gray-700">
+              <label htmlFor="es-program" className="mb-1 block text-sm font-medium text-gray-700">
                 Program
               </label>
               <input
-                id="as-program"
+                id="es-program"
                 type="text"
                 value={form.program}
                 onChange={(e) => set('program', e.target.value)}
-                className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-1 ${
-                  errors.program
-                    ? 'border-red-400 focus:border-red-400 focus:ring-red-400'
-                    : 'border-gray-300 focus:border-teal-500 focus:ring-teal-500'
-                }`}
-                placeholder="e.g. Pre-med, Nursing, EMT"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
               />
-              {errors.program && (
-                <p className="mt-1 text-xs text-red-600">{errors.program}</p>
-              )}
             </div>
             <div>
-              <label htmlFor="as-cohort" className="mb-1 block text-sm font-medium text-gray-700">
+              <label htmlFor="es-cohort" className="mb-1 block text-sm font-medium text-gray-700">
                 Cohort
               </label>
               <input
-                id="as-cohort"
+                id="es-cohort"
                 type="text"
                 value={form.cohort}
                 onChange={(e) => set('cohort', e.target.value)}
-                className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-1 ${
-                  errors.cohort
-                    ? 'border-red-400 focus:border-red-400 focus:ring-red-400'
-                    : 'border-gray-300 focus:border-teal-500 focus:ring-teal-500'
-                }`}
-                placeholder="e.g. Spring 2026"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
               />
-              {errors.cohort && (
-                <p className="mt-1 text-xs text-red-600">{errors.cohort}</p>
-              )}
             </div>
           </div>
 
-          <p className="text-xs text-gray-400">
-            After adding, the student can sign in immediately using their Student ID and the PIN you set above.
-          </p>
+          {/* Reset PIN */}
+          <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.resetPin}
+                onChange={(e) => {
+                  set('resetPin', e.target.checked);
+                  if (!e.target.checked) set('pin', '');
+                }}
+                className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+              />
+              <span className="text-sm font-medium text-gray-700">Reset this student&rsquo;s PIN</span>
+            </label>
+            {form.resetPin && (
+              <div>
+                <div className="mb-1 flex items-center justify-between">
+                  <label htmlFor="es-pin" className="text-sm font-medium text-gray-700">
+                    New PIN <span className="text-red-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      set('pin', randomPin());
+                      if (errors.pin) setErrors((p) => ({ ...p, pin: undefined }));
+                    }}
+                    className="text-xs text-teal-600 hover:text-teal-700 hover:underline"
+                  >
+                    Generate
+                  </button>
+                </div>
+                <input
+                  id="es-pin"
+                  type="text"
+                  value={form.pin}
+                  onChange={(e) => set('pin', e.target.value.replace(/\D/g, '').slice(0, 4))}
+                  inputMode="numeric"
+                  maxLength={4}
+                  pattern="\d{4}"
+                  required={form.resetPin}
+                  className={`w-full rounded-lg border px-3 py-2 font-mono text-sm focus:outline-none focus:ring-1 ${
+                    errors.pin
+                      ? 'border-red-400 focus:border-red-400 focus:ring-red-400'
+                      : 'border-gray-300 focus:border-teal-500 focus:ring-teal-500'
+                  }`}
+                  placeholder="4 digits"
+                />
+                {errors.pin && <p className="mt-1 text-xs text-red-600">{errors.pin}</p>}
+              </div>
+            )}
+          </div>
 
           {/* Actions */}
           <div className="flex justify-end gap-3 pt-1">
@@ -329,7 +354,7 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
               )}
-              {loading ? 'Adding…' : 'Add student'}
+              {loading ? 'Saving…' : 'Save changes'}
             </button>
           </div>
         </form>

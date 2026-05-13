@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { AddStudentModal } from './AddStudentModal';
+import { EditStudentModal } from './EditStudentModal';
 
 export interface StudentRow {
   id: string;
@@ -20,11 +21,15 @@ export interface StudentRow {
 
 export function StudentsTable({ initial }: { initial: StudentRow[] }) {
   const [students, setStudents] = useState<StudentRow[]>(initial);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [editStudent, setEditStudent] = useState<StudentRow | null>(null);
 
   function handleAdded(student: StudentRow) {
-    // Prepend new student so they appear at the top immediately
     setStudents((prev) => [student, ...prev]);
+  }
+
+  function handleUpdated(updated: StudentRow) {
+    setStudents((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
   }
 
   return (
@@ -35,16 +40,10 @@ export function StudentsTable({ initial }: { initial: StudentRow[] }) {
         <div className="flex items-center gap-3">
           <span className="text-sm text-gray-500">{students.length} enrolled</span>
           <button
-            onClick={() => setModalOpen(true)}
+            onClick={() => setAddOpen(true)}
             className="inline-flex items-center gap-1.5 rounded-lg bg-teal-500 px-4 py-2 text-sm font-medium text-white hover:bg-teal-600 transition-colors focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-2"
           >
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2.5}
-            >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
             </svg>
             Add student
@@ -57,10 +56,10 @@ export function StudentsTable({ initial }: { initial: StudentRow[] }) {
         <table className="min-w-full text-sm">
           <thead className="border-b border-gray-100 bg-gray-50">
             <tr>
-              {['Name', 'ID', 'Program', 'Cohort', 'Approved', 'Pending', 'Called Out'].map(
-                (h) => (
+              {['Name', 'ID', 'Program', 'Cohort', 'Approved', 'Pending', 'Called Out', ''].map(
+                (h, i) => (
                   <th
-                    key={h}
+                    key={i}
                     className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider"
                   >
                     {h}
@@ -85,11 +84,19 @@ export function StudentsTable({ initial }: { initial: StudentRow[] }) {
                 <td className="px-4 py-3">
                   <span className="badge-called-out">{s.shift_counts.called_out}</span>
                 </td>
+                <td className="px-4 py-3 text-right">
+                  <button
+                    onClick={() => setEditStudent(s)}
+                    className="text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors"
+                  >
+                    Edit
+                  </button>
+                </td>
               </tr>
             ))}
             {students.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-10 text-center text-gray-400">
+                <td colSpan={8} className="px-4 py-10 text-center text-gray-400">
                   No students yet. Click &ldquo;Add student&rdquo; to get started.
                 </td>
               </tr>
@@ -99,9 +106,15 @@ export function StudentsTable({ initial }: { initial: StudentRow[] }) {
       </div>
 
       <AddStudentModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
         onAdded={handleAdded}
+      />
+      <EditStudentModal
+        open={editStudent !== null}
+        student={editStudent}
+        onClose={() => setEditStudent(null)}
+        onUpdated={handleUpdated}
       />
     </>
   );

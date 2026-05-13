@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { href: '/student/week', label: 'My Week' },
   { href: '/student/history', label: 'History' },
   { href: '/student/callout', label: 'Call Out' },
+  { href: '/student/profile', label: 'Profile' },
 ];
 
 export function StudentNav({ student }: StudentNavProps) {
