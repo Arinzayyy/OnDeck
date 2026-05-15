@@ -12,13 +12,15 @@ export function LoginPage() {
   const [tab, setTab] = useState<'student' | 'admin'>('student');
 
   // Student form
-  const [studentId, setStudentId] = useState('');
-  const [pin, setPin] = useState('');
-  const [studentLoading, setStudentLoading] = useState(false);
-
-  // Admin form
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [studentLoading, setStudentLoading] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
+
+  // Admin form
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
   const [adminLoading, setAdminLoading] = useState(false);
 
   async function handleStudentLogin(e: React.FormEvent) {
@@ -28,7 +30,7 @@ export function LoginPage() {
       const res = await fetch('/api/auth/student', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ student_id: studentId, pin }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -49,7 +51,7 @@ export function LoginPage() {
       const res = await fetch('/api/auth/admin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: adminEmail, password: adminPassword }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -93,36 +95,64 @@ export function LoginPage() {
             <form onSubmit={handleStudentLogin} className="space-y-5">
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                  Student ID
+                  Email
                 </label>
                 <input
-                  type="text"
-                  value={studentId}
-                  onChange={(e) => setStudentId(e.target.value.toUpperCase())}
-                  placeholder="e.g. S001"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
                   required
+                  autoComplete="email"
                   className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
                 />
               </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-gray-700">
-                  4-Digit PIN
+                  Password
                 </label>
-                <input
-                  type="password"
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value.slice(0, 4))}
-                  placeholder="••••"
-                  maxLength={4}
-                  pattern="\d{4}"
-                  required
-                  inputMode="numeric"
-                  className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    autoComplete="current-password"
+                    className="w-full rounded-lg border border-gray-300 px-4 py-2.5 pr-10 text-sm focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                    tabIndex={-1}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? (
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                      </svg>
+                    ) : (
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </div>
               <Button type="submit" className="w-full" size="lg" loading={studentLoading}>
                 Sign In
               </Button>
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => setForgotOpen(true)}
+                  className="text-sm text-teal-600 hover:text-teal-700 hover:underline transition-colors"
+                >
+                  Forgot password?
+                </button>
+              </div>
             </form>
           ) : (
             <form onSubmit={handleAdminLogin} className="space-y-5">
@@ -132,8 +162,8 @@ export function LoginPage() {
                 </label>
                 <input
                   type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  value={adminEmail}
+                  onChange={(e) => setAdminEmail(e.target.value)}
                   placeholder="admin@ondeck.dev"
                   required
                   className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
@@ -145,8 +175,8 @@ export function LoginPage() {
                 </label>
                 <input
                   type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
                   placeholder="••••••••"
                   required
                   className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
@@ -159,6 +189,34 @@ export function LoginPage() {
           )}
         </div>
       </div>
+
+      {/* Forgot password modal */}
+      {forgotOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setForgotOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <h2 className="text-base font-semibold text-gray-900 mb-2">Forgot your password?</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Password reset by email is coming soon. For now, ask your admin to reset your password from the Students page.
+            </p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setForgotOpen(false)}
+                className="rounded-lg bg-teal-500 px-4 py-2 text-sm font-medium text-white hover:bg-teal-600 transition-colors"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

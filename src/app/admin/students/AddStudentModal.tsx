@@ -15,6 +15,7 @@ interface FormState {
   firstName: string;
   lastName: string;
   studentId: string;
+  email: string;
   program: string;
   cohort: string;
 }
@@ -23,38 +24,32 @@ interface FieldErrors {
   firstName?: string;
   lastName?: string;
   studentId?: string;
+  email?: string;
+  password?: string;
   program?: string;
   cohort?: string;
-  pin?: string;
 }
 
 interface SuccessData {
   row: StudentRow;
-  studentId: string;
-  pin: string;
+  email: string;
+  password: string;
 }
 
-function generatePin(): string {
-  const arr = new Uint32Array(4);
+function generatePassword(): string {
+  const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  const arr = new Uint32Array(12);
   crypto.getRandomValues(arr);
-  let pin = '';
-  for (let i = 0; i < 4; i++) {
-    pin += (arr[i] % 10).toString();
-  }
-  if (
-    /^(\d)\1{3}$/.test(pin) ||
-    pin === '1234' || pin === '4321' ||
-    pin === '0123' || pin === '9876'
-  ) {
-    return generatePin();
-  }
-  return pin;
+  let pw = '';
+  for (let i = 0; i < 12; i++) pw += charset[arr[i] % charset.length];
+  return pw;
 }
 
 const EMPTY_FORM: FormState = {
   firstName: '',
   lastName: '',
   studentId: '',
+  email: '',
   program: '',
   cohort: '',
 };
@@ -65,7 +60,7 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
   const overlayRef = useRef<HTMLDivElement>(null);
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [pin, setPin] = useState<string>(() => generatePin());
+  const [password, setPassword] = useState<string>(() => generatePassword());
   const [errors, setErrors] = useState<FieldErrors>({});
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<SuccessData | null>(null);
@@ -74,7 +69,7 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
   useEffect(() => {
     if (open) {
       setForm(EMPTY_FORM);
-      setPin(generatePin());
+      setPassword(generatePassword());
       setErrors({});
       setSuccess(null);
       setCopied(false);
@@ -113,8 +108,8 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
     e.preventDefault();
     setErrors({});
 
-    if (!/^\d{4}$/.test(pin)) {
-      setErrors({ pin: 'PIN must be exactly 4 digits.' });
+    if (password.length < 8) {
+      setErrors({ password: 'Password must be at least 8 characters.' });
       return;
     }
 
@@ -128,9 +123,10 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
           firstName: form.firstName,
           lastName: form.lastName,
           studentId: form.studentId,
+          email: form.email,
+          password,
           program: form.program,
           cohort: form.cohort,
-          pin,
         }),
       });
 
@@ -143,9 +139,11 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
           student_id: data.student.student_id,
           program: data.student.program ?? null,
           cohort: data.student.cohort ?? null,
+          auth_id: data.student.auth_id ?? null,
+          email: data.student.email ?? null,
           shift_counts: { total: 0, pending: 0, approved: 0, cancelled: 0, called_out: 0 },
         };
-        setSuccess({ row: newRow, studentId: data.student.student_id, pin });
+        setSuccess({ row: newRow, email: data.student.email, password });
         return;
       }
 
@@ -178,13 +176,11 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
   async function handleCopy() {
     if (!success) return;
     try {
-      await navigator.clipboard.writeText(
-        `Student ID: ${success.studentId}\nPIN: ${success.pin}`
-      );
+      await navigator.clipboard.writeText(`Email: ${success.email}\nPassword: ${success.password}`);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // clipboard not available — silently ignore
+      // clipboard unavailable — silently ignore
     }
   }
 
@@ -230,16 +226,16 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
               ✓ <span className="text-gray-900">{success.row.name}</span> has been added to the roster.
             </p>
             <p className="text-sm text-gray-500">
-              Share these sign-in details with the student privately. They can change their PIN from their Profile page after first login.
+              Share these sign-in details privately. They can change their password from the Profile page after first login.
             </p>
             <div className="rounded-lg border border-teal-200 bg-teal-50 p-4 space-y-3">
               <div>
-                <p className="text-xs font-medium uppercase tracking-wider text-teal-600 mb-0.5">Student ID</p>
-                <p className="font-mono text-lg font-bold text-teal-700">{success.studentId}</p>
+                <p className="text-xs font-medium uppercase tracking-wider text-teal-600 mb-0.5">Email</p>
+                <p className="font-mono text-base font-bold text-teal-700 break-all">{success.email}</p>
               </div>
               <div>
-                <p className="text-xs font-medium uppercase tracking-wider text-teal-600 mb-0.5">PIN</p>
-                <p className="font-mono text-lg font-bold text-teal-700">{success.pin}</p>
+                <p className="text-xs font-medium uppercase tracking-wider text-teal-600 mb-0.5">Password</p>
+                <p className="font-mono text-lg font-bold text-teal-700">{success.password}</p>
               </div>
             </div>
             <div className="flex justify-end gap-3 pt-1">
@@ -331,6 +327,29 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
               )}
             </div>
 
+            {/* Email */}
+            <div>
+              <label htmlFor="as-email" className="mb-1 block text-sm font-medium text-gray-700">
+                Email <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="as-email"
+                type="email"
+                value={form.email}
+                onChange={(e) => set('email', e.target.value)}
+                required
+                className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-1 ${
+                  errors.email
+                    ? 'border-red-400 focus:border-red-400 focus:ring-red-400'
+                    : 'border-gray-300 focus:border-teal-500 focus:ring-teal-500'
+                }`}
+                placeholder="jane@example.com"
+              />
+              {errors.email && (
+                <p className="mt-1 text-xs text-red-600">{errors.email}</p>
+              )}
+            </div>
+
             {/* Program + Cohort */}
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -342,16 +361,9 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
                   type="text"
                   value={form.program}
                   onChange={(e) => set('program', e.target.value)}
-                  className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-1 ${
-                    errors.program
-                      ? 'border-red-400 focus:border-red-400 focus:ring-red-400'
-                      : 'border-gray-300 focus:border-teal-500 focus:ring-teal-500'
-                  }`}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
                   placeholder="e.g. Nursing"
                 />
-                {errors.program && (
-                  <p className="mt-1 text-xs text-red-600">{errors.program}</p>
-                )}
               </div>
               <div>
                 <label htmlFor="as-cohort" className="mb-1 block text-sm font-medium text-gray-700">
@@ -362,39 +374,28 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
                   type="text"
                   value={form.cohort}
                   onChange={(e) => set('cohort', e.target.value)}
-                  className={`w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-1 ${
-                    errors.cohort
-                      ? 'border-red-400 focus:border-red-400 focus:ring-red-400'
-                      : 'border-gray-300 focus:border-teal-500 focus:ring-teal-500'
-                  }`}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
                   placeholder="e.g. Spring 2026"
                 />
-                {errors.cohort && (
-                  <p className="mt-1 text-xs text-red-600">{errors.cohort}</p>
-                )}
               </div>
             </div>
 
-            {/* PIN */}
+            {/* Temporary password */}
             <div>
-              <label htmlFor="as-pin" className="mb-1 block text-sm font-medium text-gray-700">
-                PIN <span className="text-red-500">*</span>
+              <label htmlFor="as-pw" className="mb-1 block text-sm font-medium text-gray-700">
+                Temporary password <span className="text-red-500">*</span>
               </label>
               <div className="flex items-center gap-2">
                 <input
-                  id="as-pin"
+                  id="as-pw"
                   type="text"
-                  inputMode="numeric"
-                  pattern="\d{4}"
-                  maxLength={4}
-                  value={pin}
+                  value={password}
                   onChange={(e) => {
-                    const v = e.target.value.replace(/\D/g, '').slice(0, 4);
-                    setPin(v);
-                    if (errors.pin) setErrors((prev) => ({ ...prev, pin: undefined }));
+                    setPassword(e.target.value);
+                    if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
                   }}
-                  className={`w-32 rounded-lg border px-3 py-2 font-mono text-lg tracking-widest focus:outline-none focus:ring-1 ${
-                    errors.pin
+                  className={`flex-1 rounded-lg border px-3 py-2 font-mono text-sm focus:outline-none focus:ring-1 ${
+                    errors.password
                       ? 'border-red-400 focus:border-red-400 focus:ring-red-400'
                       : 'border-gray-300 focus:border-teal-500 focus:ring-teal-500'
                   }`}
@@ -402,11 +403,11 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
                 <button
                   type="button"
                   onClick={() => {
-                    setPin(generatePin());
-                    if (errors.pin) setErrors((prev) => ({ ...prev, pin: undefined }));
+                    setPassword(generatePassword());
+                    if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
                   }}
                   className="flex items-center gap-1 rounded-lg px-2 py-2 text-sm text-gray-500 hover:text-teal-600 hover:bg-teal-50 transition-colors"
-                  title="Generate a new PIN"
+                  title="Generate a new password"
                 >
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -414,11 +415,11 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
                   Regenerate
                 </button>
               </div>
-              {errors.pin && (
-                <p className="mt-1 text-xs text-red-600">{errors.pin}</p>
+              {errors.password && (
+                <p className="mt-1 text-xs text-red-600">{errors.password}</p>
               )}
               <p className="mt-1.5 text-xs text-gray-400">
-                4-digit PIN the student uses to sign in. Share it privately — they can change it from their Profile page.
+                Share this with the student privately — they can change it from their Profile page after first login.
               </p>
             </div>
 

@@ -1,60 +1,53 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
 import { signStudentToken, makeStudentCookie } from '@/lib/auth';
-import * as crypto from 'crypto';
 
 /**
  * POST /api/auth/student
- * Body: { student_id: string; pin: string }
+ * Body: { email: string; password: string }
  *
- * Verifies the student's PIN against the bcrypt-style hash stored in the DB.
- * We use Node's crypto to do SHA-256 comparison (simple PIN, not bcrypt, to
- * avoid native module issues on Vercel). The seed script hashes PINs the same way.
- *
- * On success, sets an HttpOnly cookie with a 30-day JWT.
+ * Authenticates a student via Supabase Auth (email + password).
+ * Verifies they exist in the students table (linked by auth_id).
+ * Issues a 30-day HttpOnly student JWT cookie.
  */
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
 
-  if (!body?.student_id || !body?.pin) {
+  if (!body?.email || !body?.password) {
     return NextResponse.json(
-      { error: 'student_id and pin are required' },
+      { error: 'email and password are required' },
       { status: 400 }
     );
   }
 
-  const { student_id, pin } = body as { student_id: string; pin: string };
-
-  // PINs are 4 digits
-  if (!/^\d{4}$/.test(pin)) {
-    return NextResponse.json(
-      { error: 'PIN must be 4 digits' },
-      { status: 400 }
-    );
-  }
+  const { email, password } = body as { email: string; password: string };
 
   const db = createServerClient();
 
-  const { data: student, error } = await db
-    .from('students')
-    .select('*')
-    .eq('student_id', student_id.toUpperCase())
-    .single();
+  // Sign in via Supabase Auth
+  const { data: authData, error: authError } = await db.auth.signInWithPassword({
+    email: email.trim().toLowerCase(),
+    password,
+  });
 
-  if (error || !student) {
-    // Don't reveal whether the ID exists
+  if (authError || !authData.user) {
     return NextResponse.json(
-      { error: 'Invalid student ID or PIN' },
+      { error: 'Invalid email or password' },
       { status: 401 }
     );
   }
 
-  // Compare SHA-256(pin) against stored hash
-  const pinHash = crypto.createHash('sha256').update(pin).digest('hex');
-  if (pinHash !== student.pin_hash) {
+  // Verify they have a student row linked to this auth user
+  const { data: student } = await db
+    .from('students')
+    .select('id, name, student_id, program, cohort')
+    .eq('auth_id', authData.user.id)
+    .single();
+
+  if (!student) {
     return NextResponse.json(
-      { error: 'Invalid student ID or PIN' },
-      { status: 401 }
+      { error: 'Not authorized as a student' },
+      { status: 403 }
     );
   }
 
@@ -62,8 +55,8 @@ export async function POST(req: NextRequest) {
     sub: student.id,
     student_id: student.student_id,
     name: student.name,
-    program: student.program,
-    cohort: student.cohort,
+    program: student.program ?? '',
+    cohort: student.cohort ?? '',
   });
 
   const res = NextResponse.json({

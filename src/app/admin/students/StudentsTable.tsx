@@ -10,6 +10,8 @@ export interface StudentRow {
   student_id: string;
   program: string | null;
   cohort: string | null;
+  auth_id: string | null;
+  email: string | null;
   shift_counts: {
     total: number;
     pending: number;
@@ -71,7 +73,16 @@ export function StudentsTable({ initial }: { initial: StudentRow[] }) {
           <tbody className="divide-y divide-gray-100">
             {students.map((s) => (
               <tr key={s.id} className="hover:bg-gray-50 transition-colors">
-                <td className="px-4 py-3 font-medium text-gray-900">{s.name}</td>
+                <td className="px-4 py-3 font-medium text-gray-900">
+                  <div className="flex items-center gap-2">
+                    {s.name}
+                    {!s.auth_id && (
+                      <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-yellow-100 text-yellow-700 border border-yellow-200">
+                        Inactive
+                      </span>
+                    )}
+                  </div>
+                </td>
                 <td className="px-4 py-3 font-mono text-gray-500">{s.student_id}</td>
                 <td className="px-4 py-3 text-gray-600">{s.program ?? '—'}</td>
                 <td className="px-4 py-3 text-gray-500">{s.cohort ?? '—'}</td>

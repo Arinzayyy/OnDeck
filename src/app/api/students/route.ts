@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import * as crypto from 'crypto';
 import { createServerClient } from '@/lib/supabase/server';
 import { getAdminFromRequest } from '@/lib/auth';
 
@@ -17,19 +16,13 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await db
     .from('students')
-    .select(
-      `
-      id, name, student_id, program, cohort, created_at,
-      shifts(status)
-    `
-    )
+    .select('id, name, student_id, program, cohort, auth_id, email, shifts(status)')
     .order('name', { ascending: true });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // Summarize shift counts per student
   const students = (data ?? []).map((s) => {
     const shifts = (s.shifts as { status: string }[]) ?? [];
     return {
@@ -38,7 +31,8 @@ export async function GET(req: NextRequest) {
       student_id: s.student_id,
       program: s.program,
       cohort: s.cohort,
-      created_at: s.created_at,
+      auth_id: s.auth_id ?? null,
+      email: s.email ?? null,
       shift_counts: {
         total: shifts.length,
         pending: shifts.filter((x) => x.status === 'pending').length,
@@ -54,8 +48,8 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST /api/students
- * Admin-only: create a new student.
- * Body: { firstName, lastName?, studentId, program?, cohort?, pin }
+ * Admin-only: create a new student with email + password via Supabase Auth.
+ * Body: { firstName, lastName?, studentId, email, password, program?, cohort? }
  */
 export async function POST(req: NextRequest) {
   const admin = await getAdminFromRequest(req);
@@ -68,8 +62,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
 
-  // ── Validate firstName / lastName ──────────────────────────────────────────
-  const firstName = (body.firstName ?? '').toString().trim();
+  // ── Validate name ──────────────────────────────────────────────────────────
+  const firstName = String(body.firstName ?? '').trim();
   if (firstName.length < 2 || firstName.length > 40) {
     return NextResponse.json(
       { error: 'First name must be between 2 and 40 characters.', field: 'firstName' },
@@ -77,7 +71,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const lastName = (body.lastName ?? '').toString().trim();
+  const lastName = String(body.lastName ?? '').trim();
   if (lastName && (lastName.length < 1 || lastName.length > 40)) {
     return NextResponse.json(
       { error: 'Last name must be between 1 and 40 characters.', field: 'lastName' },
@@ -88,7 +82,7 @@ export async function POST(req: NextRequest) {
   const name = firstName + (lastName ? ' ' + lastName : '');
 
   // ── Validate studentId ─────────────────────────────────────────────────────
-  const studentId = (body.studentId ?? '').toString().trim().toUpperCase();
+  const studentId = String(body.studentId ?? '').trim().toUpperCase();
   if (studentId.length < 2 || studentId.length > 40) {
     return NextResponse.json(
       { error: 'Student ID must be between 2 and 40 characters.', field: 'studentId' },
@@ -96,17 +90,26 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ── Validate pin ───────────────────────────────────────────────────────────
-  const pin = (body.pin ?? '').toString().trim();
-  if (!/^\d{4}$/.test(pin)) {
+  // ── Validate email ─────────────────────────────────────────────────────────
+  const email = String(body.email ?? '').trim().toLowerCase();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return NextResponse.json(
-      { error: 'PIN must be exactly 4 digits.', field: 'pin' },
+      { error: 'A valid email address is required.', field: 'email' },
+      { status: 400 }
+    );
+  }
+
+  // ── Validate password ──────────────────────────────────────────────────────
+  const password = String(body.password ?? '').trim();
+  if (password.length < 8) {
+    return NextResponse.json(
+      { error: 'Password must be at least 8 characters.', field: 'password' },
       { status: 400 }
     );
   }
 
   // ── Validate optional fields ───────────────────────────────────────────────
-  const program = (body.program ?? '').toString().trim();
+  const program = String(body.program ?? '').trim();
   if (program.length > 60) {
     return NextResponse.json(
       { error: 'Program must be 60 characters or fewer.', field: 'program' },
@@ -114,7 +117,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const cohort = (body.cohort ?? '').toString().trim();
+  const cohort = String(body.cohort ?? '').trim();
   if (cohort.length > 40) {
     return NextResponse.json(
       { error: 'Cohort must be 40 characters or fewer.', field: 'cohort' },
@@ -124,8 +127,7 @@ export async function POST(req: NextRequest) {
 
   const db = createServerClient();
 
-  // ── Case-insensitive uniqueness check ─────────────────────────────────────
-  // Postgres ILIKE for case-insensitive match
+  // ── Check studentId uniqueness ─────────────────────────────────────────────
   const { data: existing } = await db
     .from('students')
     .select('id')
@@ -139,22 +141,41 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ── Insert ─────────────────────────────────────────────────────────────────
-  const pinHash = crypto.createHash('sha256').update(pin).digest('hex');
+  // ── Create Supabase Auth user ──────────────────────────────────────────────
+  const { data: authData, error: authError } = await db.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
 
+  if (authError) {
+    const msg = authError.message.toLowerCase();
+    if (msg.includes('already registered') || msg.includes('already exists') || (authError as { code?: string }).code === 'email_exists') {
+      return NextResponse.json(
+        { error: 'An account with this email already exists.', field: 'email' },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json({ error: authError.message }, { status: 400 });
+  }
+
+  // ── Insert student row ─────────────────────────────────────────────────────
   const { data, error } = await db
     .from('students')
     .insert({
+      auth_id: authData.user.id,
+      email,
       name,
       student_id: studentId,
       program: program || null,
       cohort: cohort || null,
-      pin_hash: pinHash,
     })
-    .select('id, name, student_id, program, cohort')
+    .select('id, name, student_id, program, cohort, auth_id, email')
     .single();
 
   if (error) {
+    // Roll back: clean up the orphaned auth user
+    await db.auth.admin.deleteUser(authData.user.id);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 

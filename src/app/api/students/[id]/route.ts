@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import * as crypto from 'crypto';
 import { createServerClient } from '@/lib/supabase/server';
 import { getAdminFromRequest } from '@/lib/auth';
 
 /**
  * PATCH /api/students/[id]
- * Admin-only: edit any field on a student record and optionally reset the PIN.
- * Body: { firstName, lastName?, studentId, program?, cohort?, pin? }
+ * Admin-only: edit any profile field on a student record and optionally reset their password.
+ * Body: { firstName, lastName?, studentId, program?, cohort?, newPassword? }
  */
 export async function PATCH(
   req: NextRequest,
@@ -22,7 +21,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
 
-  // ── Validate firstName / lastName ──────────────────────────────────────────
+  // ── Validate name ──────────────────────────────────────────────────────────
   const firstName = String(body.firstName ?? '').trim();
   if (firstName.length < 2 || firstName.length > 40) {
     return NextResponse.json(
@@ -67,18 +66,39 @@ export async function PATCH(
     );
   }
 
-  // ── Validate PIN if provided ───────────────────────────────────────────────
-  const rawPin = body.pin !== undefined ? String(body.pin).trim() : undefined;
-  if (rawPin !== undefined && !/^\d{4}$/.test(rawPin)) {
+  // ── Validate password if provided ──────────────────────────────────────────
+  const newPassword = body.newPassword !== undefined
+    ? String(body.newPassword).trim()
+    : undefined;
+
+  if (newPassword !== undefined && newPassword.length < 8) {
     return NextResponse.json(
-      { error: 'PIN must be exactly 4 digits.', field: 'pin' },
+      { error: 'Password must be at least 8 characters.', field: 'password' },
       { status: 400 }
     );
   }
 
   const db = createServerClient();
 
-  // ── Check studentId uniqueness (exclude this student) ─────────────────────
+  // ── Fetch student for auth_id (needed if resetting password) ──────────────
+  let studentAuthId: string | null = null;
+  if (newPassword !== undefined) {
+    const { data: current } = await db
+      .from('students')
+      .select('auth_id')
+      .eq('id', params.id)
+      .single();
+    studentAuthId = current?.auth_id ?? null;
+
+    if (!studentAuthId) {
+      return NextResponse.json(
+        { error: 'This student has no sign-in account to reset the password for.', field: 'password' },
+        { status: 400 }
+      );
+    }
+  }
+
+  // ── Check studentId uniqueness (exclude current) ───────────────────────────
   const { data: collision } = await db
     .from('students')
     .select('id')
@@ -93,27 +113,33 @@ export async function PATCH(
     );
   }
 
-  // ── Build update payload ───────────────────────────────────────────────────
-  const updates: Record<string, unknown> = {
-    name,
-    student_id: studentId,
-    program: program || null,
-    cohort: cohort || null,
-  };
-
-  if (rawPin !== undefined) {
-    updates.pin_hash = crypto.createHash('sha256').update(rawPin).digest('hex');
-  }
-
+  // ── Update profile fields ──────────────────────────────────────────────────
   const { data, error } = await db
     .from('students')
-    .update(updates)
+    .update({
+      name,
+      student_id: studentId,
+      program: program || null,
+      cohort: cohort || null,
+    })
     .eq('id', params.id)
     .select('id, name, student_id, program, cohort')
     .single();
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  // ── Reset password via auth admin API ──────────────────────────────────────
+  if (newPassword !== undefined && studentAuthId) {
+    const { error: authUpdateError } = await db.auth.admin.updateUserById(
+      studentAuthId,
+      { password: newPassword }
+    );
+
+    if (authUpdateError) {
+      return NextResponse.json({ error: authUpdateError.message }, { status: 500 });
+    }
   }
 
   return NextResponse.json({ student: data });

@@ -5,15 +5,34 @@
 create extension if not exists "pgcrypto";
 
 -- ─── Students ─────────────────────────────────────────────────────────────────
+-- auth_id links to a Supabase Auth user (email + password login).
+-- email is the student's login email, stored here for display.
+-- pin_hash is kept nullable for backward compat with legacy rows; no longer written.
+-- program and cohort are nullable — they are optional at enrolment.
 create table if not exists students (
   id          uuid primary key default gen_random_uuid(),
+  auth_id     uuid unique references auth.users(id) on delete set null,
+  email       text unique,
   name        text not null,
   student_id  text not null unique,     -- e.g. "S001"
-  program     text not null,            -- e.g. "Dental Hygiene Year 2"
-  cohort      text not null,            -- e.g. "2025"
-  pin_hash    text not null,            -- bcrypt hash of 4-digit PIN
+  program     text,
+  cohort      text,
+  pin_hash    text,                     -- legacy; nullable; no longer written by the app
   created_at  timestamptz not null default now()
 );
+
+-- ─── Upgrade path for existing databases ─────────────────────────────────────
+-- Run these once in the Supabase SQL editor if applying to a DB that already
+-- has the students table from the previous schema version.
+alter table students
+  add column if not exists auth_id uuid unique references auth.users(id) on delete set null,
+  add column if not exists email text unique;
+-- Make previously-required columns nullable (they're optional at enrolment)
+do $$ begin
+  begin alter table students alter column pin_hash drop not null; exception when others then null; end;
+  begin alter table students alter column program  drop not null; exception when others then null; end;
+  begin alter table students alter column cohort   drop not null; exception when others then null; end;
+end $$;
 
 -- ─── Settings (single-row config) ────────────────────────────────────────────
 create table if not exists settings (
@@ -59,9 +78,6 @@ create index if not exists callouts_shift_id_idx on callouts(shift_id);
 create index if not exists callouts_student_id_idx on callouts(student_id);
 
 -- ─── Admins (Supabase Auth users flagged as admins) ──────────────────────────
--- We rely on Supabase Auth for admin login. This table links auth.users to
--- an "is_admin" flag so we can verify on the server without exposing the
--- service role key to the client.
 create table if not exists admins (
   id          uuid primary key references auth.users(id) on delete cascade,
   email       text not null,
@@ -69,31 +85,32 @@ create table if not exists admins (
 );
 
 -- ─── RLS ──────────────────────────────────────────────────────────────────────
--- All mutations go through server-side API routes using the service role key,
--- so we enable RLS but keep policies permissive for the service role.
 alter table students       enable row level security;
 alter table shifts         enable row level security;
 alter table callouts       enable row level security;
 alter table settings       enable row level security;
 alter table admins         enable row level security;
 
--- Service role bypasses RLS by design in Supabase (no policy needed).
--- These policies allow the anon key to read public-safe data if needed,
--- but we never expose the anon key for writes.
-
 -- Allow anon reads on settings (used client-side for display)
 create policy "settings_read" on settings for select using (true);
 
--- Allow an authenticated admin user to read their OWN row in admins.
--- This is required because the admin login route uses the same Supabase client
--- for signInWithPassword AND the subsequent admins lookup. After signInWithPassword
--- the client is scoped to the user's JWT, which would otherwise hit RLS with no
--- matching policy and return zero rows.
+-- Allow an authenticated admin user to read their own row.
+-- Required because the admin login route uses signInWithPassword AND the
+-- subsequent admins lookup in the same client scope.
 drop policy if exists "admins_self_read" on admins;
 create policy "admins_self_read"
   on admins
   for select
   using (auth.uid() = id);
+
+-- Allow an authenticated student user to read their own row.
+-- Required for the student login route: after signInWithPassword the client
+-- is scoped to that user's JWT, which would otherwise hit RLS with no policy.
+drop policy if exists "students_self_read" on students;
+create policy "students_self_read"
+  on students
+  for select
+  using (auth.uid() = auth_id);
 
 -- ─── Updated_at trigger ───────────────────────────────────────────────────────
 create or replace function update_updated_at()
