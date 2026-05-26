@@ -9,7 +9,8 @@ const NAV_ITEMS = [
   { href: '/admin/approvals', label: 'Approvals' },
   { href: '/admin/calendar', label: 'Calendar' },
   { href: '/admin/callouts', label: 'Callouts' },
-  { href: '/admin/students', label: 'Students' },
+  { href: '/admin/students', label: 'Staff / Students' },
+  { href: '/admin/front-desk', label: 'Front Desk' },
   { href: '/admin/settings', label: 'Settings' },
 ];
 

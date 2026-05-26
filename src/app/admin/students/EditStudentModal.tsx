@@ -58,6 +58,8 @@ export function EditStudentModal({ open, student, onClose, onUpdated }: EditStud
   });
   const [errors, setErrors] = useState<FieldErrors>({});
   const [loading, setLoading] = useState(false);
+  const [personKind, setPersonKind] = useState<'student' | 'staff'>('student');
+  const [frontDeskAccess, setFrontDeskAccess] = useState(false);
 
   // Password reset (for activated students)
   const [resetPassword, setResetPassword] = useState(false);
@@ -79,6 +81,8 @@ export function EditStudentModal({ open, student, onClose, onUpdated }: EditStud
       const { firstName, lastName } = splitName(student.name);
       setForm({ firstName, lastName, studentId: student.student_id, program: student.program ?? '', cohort: student.cohort ?? '' });
       setErrors({});
+      setPersonKind((student.kind ?? 'student') as 'student' | 'staff');
+      setFrontDeskAccess(student.roles?.includes('front_desk') ?? false);
       setResetPassword(false);
       setNewPassword('');
       setPwdError('');
@@ -135,6 +139,8 @@ export function EditStudentModal({ open, student, onClose, onUpdated }: EditStud
         studentId: form.studentId,
         program: form.program,
         cohort: form.cohort,
+        roles: frontDeskAccess ? ['front_desk'] : [],
+        kind: personKind,
       };
       if (resetPassword) {
         body.newPassword = newPassword;
@@ -155,6 +161,8 @@ export function EditStudentModal({ open, student, onClose, onUpdated }: EditStud
           student_id: data.student.student_id,
           program: data.student.program ?? null,
           cohort: data.student.cohort ?? null,
+          roles: data.student.roles ?? [],
+          kind: data.student.kind ?? 'student',
         };
 
         if (resetPassword) {
@@ -421,6 +429,46 @@ export function EditStudentModal({ open, student, onClose, onUpdated }: EditStud
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
                   />
                 </div>
+              </div>
+
+              {/* Type */}
+              <div className="rounded-lg border border-gray-200 p-4 space-y-2">
+                <p className="text-sm font-semibold text-gray-700">Type</p>
+                <div className="flex gap-2">
+                  {(['student', 'staff'] as const).map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setPersonKind(k)}
+                      className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${
+                        personKind === k
+                          ? 'bg-teal-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {k === 'student' ? 'Student' : 'Staff'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Roles */}
+              <div className="rounded-lg border border-gray-200 p-4 space-y-2">
+                <p className="text-sm font-semibold text-gray-700">Roles</p>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={frontDeskAccess}
+                    onChange={(e) => setFrontDeskAccess(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 accent-teal-600 focus:ring-teal-500"
+                  />
+                  <span className="text-sm text-gray-700">
+                    <span className="font-medium">Front desk access</span>
+                    <span className="block text-xs text-gray-500 mt-0.5">
+                      Lets this student share the patient intake link and view submissions. They keep their normal student access.
+                    </span>
+                  </span>
+                </label>
               </div>
 
               {/* Reset password (for activated students only) */}

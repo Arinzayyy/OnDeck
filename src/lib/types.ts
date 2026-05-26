@@ -8,6 +8,8 @@ export interface Student {
   student_id: string;   // e.g. "S001"
   program: string;
   cohort: string;
+  roles: string[];
+  kind: string;         // 'student' | 'staff'
   created_at: string;
 }
 
@@ -54,6 +56,7 @@ export interface StudentJwtPayload {
   name: string;
   program: string;
   cohort: string;
+  roles?: string[];     // e.g. ['front_desk']; optional for backward compat with old tokens
   iat: number;
   exp: number;
 }

@@ -56,7 +56,7 @@ export default async function AdminDashboardPage() {
       bg: 'bg-orange-50',
     },
     {
-      label: 'Total Students',
+      label: 'Staff / Students',
       value: studentCount ?? 0,
       href: '/admin/students',
       color: 'text-blue-600',

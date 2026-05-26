@@ -60,6 +60,7 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
   const overlayRef = useRef<HTMLDivElement>(null);
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [kind, setKind] = useState<'student' | 'staff'>('student');
   const [password, setPassword] = useState<string>(() => generatePassword());
   const [errors, setErrors] = useState<FieldErrors>({});
   const [loading, setLoading] = useState(false);
@@ -69,6 +70,7 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
   useEffect(() => {
     if (open) {
       setForm(EMPTY_FORM);
+      setKind('student');
       setPassword(generatePassword());
       setErrors({});
       setSuccess(null);
@@ -127,6 +129,7 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
           password,
           program: form.program,
           cohort: form.cohort,
+          kind,
         }),
       });
 
@@ -141,6 +144,8 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
           cohort: data.student.cohort ?? null,
           auth_id: data.student.auth_id ?? null,
           email: data.student.email ?? null,
+          roles: data.student.roles ?? [],
+          kind: data.student.kind ?? 'student',
           shift_counts: { total: 0, pending: 0, approved: 0, cancelled: 0, called_out: 0 },
         };
         setSuccess({ row: newRow, email: data.student.email, password });
@@ -302,6 +307,30 @@ export function AddStudentModal({ open, onClose, onAdded }: AddStudentModalProps
                   <p className="mt-1 text-xs text-red-600">{errors.lastName}</p>
                 )}
               </div>
+            </div>
+
+            {/* Type */}
+            <div>
+              <p className="mb-1.5 text-sm font-medium text-gray-700">Type</p>
+              <div className="flex gap-2">
+                {(['student', 'staff'] as const).map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setKind(k)}
+                    className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                      kind === k
+                        ? 'bg-teal-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {k === 'student' ? 'Student' : 'Staff'}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1 text-xs text-gray-400">
+                Switch to Staff for clinic employees who aren&rsquo;t in a student program.
+              </p>
             </div>
 
             {/* Student ID */}

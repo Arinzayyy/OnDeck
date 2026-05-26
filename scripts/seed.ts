@@ -61,11 +61,11 @@ async function main() {
 
   // ── 2. Seed students (email + password via Supabase Auth) ───────────────────
   const students = [
-    { name: 'Alice Mwangi',    student_id: 'S001', email: 'alice.demo@ondeck.dev',  password: 'demoPass2025!', program: 'Dental Hygiene Year 2',   cohort: '2025' },
-    { name: 'Bruno Ferreira',  student_id: 'S002', email: 'bruno.demo@ondeck.dev',  password: 'demoPass2025!', program: 'Dental Hygiene Year 1',   cohort: '2026' },
-    { name: 'Chloe Okafor',    student_id: 'S003', email: 'chloe.demo@ondeck.dev',  password: 'demoPass2025!', program: 'Dental Assisting Year 2', cohort: '2025' },
-    { name: 'David Kim',       student_id: 'S004', email: 'david.demo@ondeck.dev',  password: 'demoPass2025!', program: 'Dental Assisting Year 1', cohort: '2026' },
-    { name: 'Emma Johansson',  student_id: 'S005', email: 'emma.demo@ondeck.dev',   password: 'demoPass2025!', program: 'Dental Hygiene Year 2',   cohort: '2025' },
+    { name: 'Alice Mwangi',    student_id: 'S001', email: 'alice.demo@ondeck.dev',  password: 'demoPass2025!', program: 'Dental Hygiene Year 2',   cohort: '2025', roles: ['front_desk'] },
+    { name: 'Bruno Ferreira',  student_id: 'S002', email: 'bruno.demo@ondeck.dev',  password: 'demoPass2025!', program: 'Dental Hygiene Year 1',   cohort: '2026', roles: [] },
+    { name: 'Chloe Okafor',    student_id: 'S003', email: 'chloe.demo@ondeck.dev',  password: 'demoPass2025!', program: 'Dental Assisting Year 2', cohort: '2025', roles: [] },
+    { name: 'David Kim',       student_id: 'S004', email: 'david.demo@ondeck.dev',  password: 'demoPass2025!', program: 'Dental Assisting Year 1', cohort: '2026', roles: [] },
+    { name: 'Emma Johansson',  student_id: 'S005', email: 'emma.demo@ondeck.dev',   password: 'demoPass2025!', program: 'Dental Hygiene Year 2',   cohort: '2025', roles: [] },
   ];
 
   console.log('👥 Seeding students...');
@@ -81,7 +81,13 @@ async function main() {
 
     if (existing) {
       studentIds[s.student_id] = existing.id;
-      console.log(`   ~ ${s.name} (${s.student_id}) already exists`);
+      // Ensure roles are up-to-date even for existing rows
+      if (s.roles.length > 0) {
+        await db.from('students').update({ roles: s.roles }).eq('id', existing.id);
+        console.log(`   ~ ${s.name} (${s.student_id}) already exists — roles: ${s.roles.join(', ')}`);
+      } else {
+        console.log(`   ~ ${s.name} (${s.student_id}) already exists`);
+      }
       continue;
     }
 
@@ -112,6 +118,7 @@ async function main() {
         student_id: s.student_id,
         program: s.program,
         cohort: s.cohort,
+        roles: s.roles,
       })
       .select('id')
       .single();
@@ -122,7 +129,8 @@ async function main() {
     }
 
     studentIds[s.student_id] = data.id;
-    console.log(`   ✓ ${s.name} (${s.student_id}) — ${s.email}`);
+    const roleNote = s.roles.length > 0 ? ` [roles: ${s.roles.join(', ')}]` : '';
+    console.log(`   ✓ ${s.name} (${s.student_id}) — ${s.email}${roleNote}`);
   }
 
   // ── 3. Seed shifts ─────────────────────────────────────────────────────────

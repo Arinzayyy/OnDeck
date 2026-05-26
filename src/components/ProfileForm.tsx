@@ -3,13 +3,12 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/ui/Toast';
+import { kindShort } from '@/lib/people';
 
 interface ProfileFormProps {
-  id: string;
   name: string;
   studentId: string;
-  program: string | null;
-  cohort: string | null;
+  kind: string;
   hasAuth: boolean;
 }
 
@@ -31,18 +30,19 @@ interface PwdErrors {
   confirmPassword?: string;
 }
 
-export function ProfileForm({ name, studentId, program, cohort, hasAuth }: ProfileFormProps) {
+export function ProfileForm({ name, studentId, kind, hasAuth }: ProfileFormProps) {
   const router = useRouter();
   const { toast } = useToast();
 
-  // ── Section A: Details ─────────────────────────────────────────────────────
   const { firstName: initFirst, lastName: initLast } = splitName(name);
+
+  // ── Section A: Name ────────────────────────────────────────────────────────
   const [firstName, setFirstName] = useState(initFirst);
   const [lastName, setLastName] = useState(initLast);
-  const [programVal, setProgramVal] = useState(program ?? '');
-  const [cohortVal, setCohortVal] = useState(cohort ?? '');
   const [detailsErrors, setDetailsErrors] = useState<DetailsErrors>({});
   const [detailsLoading, setDetailsLoading] = useState(false);
+
+  const isDirty = firstName !== initFirst || lastName !== initLast;
 
   async function handleDetailsSave(e: React.FormEvent) {
     e.preventDefault();
@@ -53,7 +53,7 @@ export function ProfileForm({ name, studentId, program, cohort, hasAuth }: Profi
       const res = await fetch('/api/student/profile', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ firstName, lastName, program: programVal, cohort: cohortVal }),
+        body: JSON.stringify({ firstName, lastName }),
       });
 
       const data = await res.json();
@@ -82,7 +82,7 @@ export function ProfileForm({ name, studentId, program, cohort, hasAuth }: Profi
     }
   }
 
-  // ── Section B: Change password ─────────────────────────────────────────────
+  // ── Section C: Change password ─────────────────────────────────────────────
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -218,7 +218,6 @@ export function ProfileForm({ name, studentId, program, cohort, hasAuth }: Profi
                 setLastName(e.target.value);
                 if (detailsErrors.lastName) setDetailsErrors((p) => ({ ...p, lastName: undefined }));
               }}
-              placeholder="Add your last name when you're ready"
               className={`${inputBase} ${detailsErrors.lastName ? inputError : inputNormal}`}
             />
             {detailsErrors.lastName && (
@@ -227,44 +226,9 @@ export function ProfileForm({ name, studentId, program, cohort, hasAuth }: Profi
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label htmlFor="pf-program" className="mb-1 block text-sm font-medium text-gray-700">
-              Program
-            </label>
-            <input
-              id="pf-program"
-              type="text"
-              value={programVal}
-              onChange={(e) => setProgramVal(e.target.value)}
-              className={`${inputBase} ${inputNormal}`}
-            />
-          </div>
-          <div>
-            <label htmlFor="pf-cohort" className="mb-1 block text-sm font-medium text-gray-700">
-              Cohort
-            </label>
-            <input
-              id="pf-cohort"
-              type="text"
-              value={cohortVal}
-              onChange={(e) => setCohortVal(e.target.value)}
-              className={`${inputBase} ${inputNormal}`}
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="mb-1 block text-sm font-medium text-gray-700">Student ID</label>
-          <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 font-mono text-sm text-gray-600">
-            {studentId}
-          </div>
-          <p className="mt-1 text-xs text-gray-400">Need to change this? Ask your admin.</p>
-        </div>
-
         <button
           type="submit"
-          disabled={detailsLoading}
+          disabled={detailsLoading || !isDirty}
           className="inline-flex items-center gap-2 rounded-lg bg-teal-500 px-4 py-2 text-sm font-medium text-white hover:bg-teal-600 transition-colors disabled:bg-teal-300 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-2"
         >
           {detailsLoading && (
@@ -273,11 +237,42 @@ export function ProfileForm({ name, studentId, program, cohort, hasAuth }: Profi
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
           )}
-          {detailsLoading ? 'Saving…' : 'Save details'}
+          {detailsLoading ? 'Saving…' : 'Save changes'}
         </button>
       </form>
 
-      {/* ── Section B: Change password ─────────────────────────────────────── */}
+      {/* ── Section B: Your account ────────────────────────────────────────── */}
+      <div className="rounded-2xl bg-white p-6 shadow-sm border border-gray-100 space-y-4">
+        <h2 className="text-base font-semibold text-gray-900">Your account</h2>
+
+        <div className="space-y-4">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-gray-500 font-medium mb-0.5">Student ID</p>
+            <p className="text-base font-medium text-gray-900 font-mono">{studentId}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-gray-500 font-medium mb-0.5">Type</p>
+            <div className="flex items-center gap-2">
+              <p className="text-base font-medium text-gray-900">{kind === 'staff' ? 'Staff' : 'Student'}</p>
+              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold tracking-wide ${
+                kind === 'staff' ? 'bg-teal-100 text-teal-800' : 'bg-slate-100 text-slate-700'
+              }`}>
+                {kindShort(kind)}
+              </span>
+            </div>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-gray-500 font-medium mb-0.5">Organization</p>
+            <p className="text-base font-medium text-gray-900">Tri Valley Urgent Care</p>
+          </div>
+        </div>
+
+        <p className="text-xs text-gray-400 pt-1">
+          To change your Student ID, Type, or any other account detail, please contact your admin.
+        </p>
+      </div>
+
+      {/* ── Section C: Change password ─────────────────────────────────────── */}
       {hasAuth && (
         <form
           onSubmit={handlePasswordChange}
@@ -285,7 +280,6 @@ export function ProfileForm({ name, studentId, program, cohort, hasAuth }: Profi
         >
           <h2 className="text-base font-semibold text-gray-900">Change password</h2>
 
-          {/* Current password */}
           <div>
             <label htmlFor="pf-cur-pw" className="mb-1 block text-sm font-medium text-gray-700">
               Current password <span className="text-red-500">*</span>
@@ -310,7 +304,6 @@ export function ProfileForm({ name, studentId, program, cohort, hasAuth }: Profi
             )}
           </div>
 
-          {/* New password */}
           <div>
             <label htmlFor="pf-new-pw" className="mb-1 block text-sm font-medium text-gray-700">
               New password <span className="text-red-500">*</span>
@@ -337,7 +330,6 @@ export function ProfileForm({ name, studentId, program, cohort, hasAuth }: Profi
             )}
           </div>
 
-          {/* Confirm new password */}
           <div>
             <label htmlFor="pf-conf-pw" className="mb-1 block text-sm font-medium text-gray-700">
               Confirm new password <span className="text-red-500">*</span>

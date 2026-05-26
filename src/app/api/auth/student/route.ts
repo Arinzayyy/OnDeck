@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
   // Verify they have a student row linked to this auth user
   const { data: student } = await db
     .from('students')
-    .select('id, name, student_id, program, cohort')
+    .select('id, name, student_id, program, cohort, roles')
     .eq('auth_id', authData.user.id)
     .single();
 
@@ -57,6 +57,7 @@ export async function POST(req: NextRequest) {
     name: student.name,
     program: student.program ?? '',
     cohort: student.cohort ?? '',
+    roles: student.roles ?? [],
   });
 
   const res = NextResponse.json({

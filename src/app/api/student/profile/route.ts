@@ -37,29 +37,13 @@ export async function PATCH(req: NextRequest) {
 
   const name = firstName + (lastName ? ' ' + lastName : '');
 
-  const program = String(body.program ?? '').trim();
-  if (program.length > 60) {
-    return NextResponse.json(
-      { error: 'Program must be 60 characters or fewer.', field: 'program' },
-      { status: 400 }
-    );
-  }
-
-  const cohort = String(body.cohort ?? '').trim();
-  if (cohort.length > 40) {
-    return NextResponse.json(
-      { error: 'Cohort must be 40 characters or fewer.', field: 'cohort' },
-      { status: 400 }
-    );
-  }
-
   const db = createServerClient();
 
   const { data, error } = await db
     .from('students')
-    .update({ name, program: program || null, cohort: cohort || null })
+    .update({ name })
     .eq('id', student.sub)
-    .select('id, name, student_id, program, cohort')
+    .select('id, name, student_id, program, cohort, roles')
     .single();
 
   if (error) {
@@ -73,6 +57,7 @@ export async function PATCH(req: NextRequest) {
     name,
     program: data.program ?? '',
     cohort: data.cohort ?? '',
+    roles: data.roles ?? [],
   });
 
   const res = NextResponse.json({ student: data });

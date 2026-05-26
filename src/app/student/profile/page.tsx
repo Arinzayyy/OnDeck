@@ -11,7 +11,7 @@ export default async function StudentProfilePage() {
   const db = createServerClient();
   const { data: student } = await db
     .from('students')
-    .select('id, name, student_id, program, cohort, auth_id')
+    .select('id, name, student_id, kind, auth_id')
     .eq('id', session.sub)
     .single();
 
@@ -22,11 +22,9 @@ export default async function StudentProfilePage() {
       <h1 className="text-2xl font-bold text-gray-900">My Profile</h1>
       <div className="max-w-lg">
         <ProfileForm
-          id={student.id}
           name={student.name}
           studentId={student.student_id}
-          program={student.program}
-          cohort={student.cohort}
+          kind={student.kind ?? 'student'}
           hasAuth={!!student.auth_id}
         />
       </div>

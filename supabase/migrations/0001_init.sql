@@ -9,6 +9,7 @@ create extension if not exists "pgcrypto";
 -- email is the student's login email, stored here for display.
 -- pin_hash is kept nullable for backward compat with legacy rows; no longer written.
 -- program and cohort are nullable — they are optional at enrolment.
+-- roles is a text array of additional roles (e.g. 'front_desk'); base student role is implicit.
 create table if not exists students (
   id          uuid primary key default gen_random_uuid(),
   auth_id     uuid unique references auth.users(id) on delete set null,
@@ -18,6 +19,8 @@ create table if not exists students (
   program     text,
   cohort      text,
   pin_hash    text,                     -- legacy; nullable; no longer written by the app
+  roles       text[] not null default '{}',
+  kind        text not null default 'student' check (kind in ('student', 'staff')),
   created_at  timestamptz not null default now()
 );
 
@@ -26,7 +29,15 @@ create table if not exists students (
 -- has the students table from the previous schema version.
 alter table students
   add column if not exists auth_id uuid unique references auth.users(id) on delete set null,
-  add column if not exists email text unique;
+  add column if not exists email text unique,
+  add column if not exists roles text[] not null default '{}',
+  add column if not exists kind text not null default 'student';
+
+do $$ begin
+  alter table students add constraint students_kind_check
+    check (kind in ('student', 'staff'));
+exception when duplicate_object then null;
+end $$;
 -- Make previously-required columns nullable (they're optional at enrolment)
 do $$ begin
   begin alter table students alter column pin_hash drop not null; exception when others then null; end;
@@ -128,3 +139,39 @@ create trigger shifts_updated_at
 create trigger settings_updated_at
   before update on settings
   for each row execute function update_updated_at();
+
+-- ─── Intake forms ─────────────────────────────────────────────────────────────
+-- The reusable intake form. Typically just one active row at a time.
+-- The patient-facing URL embeds this row's token.
+create table if not exists intake_forms (
+  id              uuid primary key default gen_random_uuid(),
+  token           text not null unique,
+  fields          jsonb not null,
+  created_by      uuid,
+  created_by_kind text not null check (created_by_kind in ('admin', 'student')),
+  active          boolean not null default true,
+  created_at      timestamptz not null default now()
+);
+
+-- ─── Intake submissions ───────────────────────────────────────────────────────
+-- One row per patient submission. Auto-expires so PHI doesn't linger.
+create table if not exists intake_submissions (
+  id            uuid primary key default gen_random_uuid(),
+  form_id       uuid not null references intake_forms(id) on delete cascade,
+  submission    jsonb not null,
+  submitted_at  timestamptz not null default now(),
+  expires_at    timestamptz not null
+);
+
+create index if not exists intake_forms_active_idx on intake_forms (active);
+create index if not exists intake_submissions_submitted_at_idx on intake_submissions (submitted_at desc);
+create index if not exists intake_submissions_form_id_idx on intake_submissions (form_id);
+create index if not exists intake_submissions_expires_at_idx on intake_submissions (expires_at);
+
+-- ─── RLS for intake tables ────────────────────────────────────────────────────
+-- Server uses the service role key (bypasses RLS) for all access via API routes.
+-- Enabling RLS with no policies = deny-all to anon/authenticated clients.
+-- Defense in depth: if anyone ever queries these from the browser with the
+-- wrong client, PHI stays locked.
+alter table intake_forms       enable row level security;
+alter table intake_submissions enable row level security;

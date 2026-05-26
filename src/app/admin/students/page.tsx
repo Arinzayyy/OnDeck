@@ -13,7 +13,7 @@ export default async function AdminStudentsPage() {
 
   const { data } = await db
     .from('students')
-    .select('id, name, student_id, program, cohort, auth_id, email, shifts(status)')
+    .select('id, name, student_id, program, cohort, auth_id, email, roles, kind, shifts(status)')
     .order('name');
 
   const students: StudentRow[] = (data ?? []).map((s) => {
@@ -26,6 +26,8 @@ export default async function AdminStudentsPage() {
       cohort: s.cohort ?? null,
       auth_id: s.auth_id ?? null,
       email: s.email ?? null,
+      roles: (s.roles as string[]) ?? [],
+      kind: (s.kind as string) ?? 'student',
       shift_counts: {
         total: shifts.length,
         pending: shifts.filter((x) => x.status === 'pending').length,

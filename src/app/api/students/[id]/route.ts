@@ -66,6 +66,32 @@ export async function PATCH(
     );
   }
 
+  // ── Validate kind if provided ───────────────────────────────────────────────
+  const ALLOWED_KINDS = ['student', 'staff'] as const;
+  let kind: string | undefined;
+  if (body.kind !== undefined) {
+    const k = String(body.kind);
+    if (!ALLOWED_KINDS.includes(k as typeof ALLOWED_KINDS[number])) {
+      return NextResponse.json({ error: 'Invalid kind value.' }, { status: 400 });
+    }
+    kind = k;
+  }
+
+  // ── Validate roles if provided ──────────────────────────────────────────────
+  const ALLOWED_ROLES = ['front_desk'] as const;
+  let roles: string[] | undefined;
+  if (body.roles !== undefined) {
+    if (!Array.isArray(body.roles)) {
+      return NextResponse.json({ error: 'roles must be an array' }, { status: 400 });
+    }
+    for (const r of body.roles) {
+      if (!ALLOWED_ROLES.includes(r as typeof ALLOWED_ROLES[number])) {
+        return NextResponse.json({ error: `Unknown role: ${r}` }, { status: 400 });
+      }
+    }
+    roles = body.roles as string[];
+  }
+
   // ── Validate password if provided ──────────────────────────────────────────
   const newPassword = body.newPassword !== undefined
     ? String(body.newPassword).trim()
@@ -114,16 +140,20 @@ export async function PATCH(
   }
 
   // ── Update profile fields ──────────────────────────────────────────────────
+  const updatePayload: Record<string, unknown> = {
+    name,
+    student_id: studentId,
+    program: program || null,
+    cohort: cohort || null,
+  };
+  if (roles !== undefined) updatePayload.roles = roles;
+  if (kind !== undefined) updatePayload.kind = kind;
+
   const { data, error } = await db
     .from('students')
-    .update({
-      name,
-      student_id: studentId,
-      program: program || null,
-      cohort: cohort || null,
-    })
+    .update(updatePayload)
     .eq('id', params.id)
-    .select('id, name, student_id, program, cohort')
+    .select('id, name, student_id, program, cohort, roles, kind')
     .single();
 
   if (error) {

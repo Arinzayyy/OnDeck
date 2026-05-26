@@ -9,7 +9,7 @@ interface StudentNavProps {
   student: StudentJwtPayload;
 }
 
-const NAV_ITEMS = [
+const BASE_NAV_ITEMS = [
   { href: '/student', label: 'Home', exact: true },
   { href: '/student/week', label: 'My Week' },
   { href: '/student/history', label: 'History' },
@@ -21,6 +21,11 @@ export function StudentNav({ student }: StudentNavProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
+
+  const hasFrontDesk = student.roles?.includes('front_desk') ?? false;
+  const NAV_ITEMS = hasFrontDesk
+    ? [...BASE_NAV_ITEMS, { href: '/front-desk', label: 'Front Desk', exact: false }]
+    : BASE_NAV_ITEMS;
 
   async function handleLogout() {
     setLoggingOut(true);

@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await db
     .from('students')
-    .select('id, name, student_id, program, cohort, auth_id, email, shifts(status)')
+    .select('id, name, student_id, program, cohort, auth_id, email, roles, kind, shifts(status)')
     .order('name', { ascending: true });
 
   if (error) {
@@ -33,6 +33,8 @@ export async function GET(req: NextRequest) {
       cohort: s.cohort,
       auth_id: s.auth_id ?? null,
       email: s.email ?? null,
+      roles: (s.roles as string[]) ?? [],
+      kind: (s.kind as string) ?? 'student',
       shift_counts: {
         total: shifts.length,
         pending: shifts.filter((x) => x.status === 'pending').length,
@@ -125,6 +127,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const ALLOWED_KINDS = ['student', 'staff'] as const;
+  const kind = body.kind !== undefined ? String(body.kind) : 'student';
+  if (!ALLOWED_KINDS.includes(kind as typeof ALLOWED_KINDS[number])) {
+    return NextResponse.json({ error: 'Invalid kind value.' }, { status: 400 });
+  }
+
   const db = createServerClient();
 
   // ── Check studentId uniqueness ─────────────────────────────────────────────
@@ -169,8 +177,9 @@ export async function POST(req: NextRequest) {
       student_id: studentId,
       program: program || null,
       cohort: cohort || null,
+      kind,
     })
-    .select('id, name, student_id, program, cohort, auth_id, email')
+    .select('id, name, student_id, program, cohort, auth_id, email, roles, kind')
     .single();
 
   if (error) {

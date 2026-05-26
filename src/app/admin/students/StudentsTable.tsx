@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { AddStudentModal } from './AddStudentModal';
 import { EditStudentModal } from './EditStudentModal';
+import { kindShort, COLLECTIVE_LABEL } from '@/lib/people';
 
 export interface StudentRow {
   id: string;
@@ -12,6 +13,8 @@ export interface StudentRow {
   cohort: string | null;
   auth_id: string | null;
   email: string | null;
+  roles: string[];
+  kind: string;
   shift_counts: {
     total: number;
     pending: number;
@@ -21,10 +24,15 @@ export interface StudentRow {
   };
 }
 
+type Filter = 'all' | 'student' | 'staff';
+
 export function StudentsTable({ initial }: { initial: StudentRow[] }) {
   const [students, setStudents] = useState<StudentRow[]>(initial);
+  const [filter, setFilter] = useState<Filter>('all');
   const [addOpen, setAddOpen] = useState(false);
   const [editStudent, setEditStudent] = useState<StudentRow | null>(null);
+
+  const visible = filter === 'all' ? students : students.filter((s) => s.kind === filter);
 
   function handleAdded(student: StudentRow) {
     setStudents((prev) => [student, ...prev]);
@@ -38,7 +46,7 @@ export function StudentsTable({ initial }: { initial: StudentRow[] }) {
     <>
       {/* Page header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Students</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{COLLECTIVE_LABEL}</h1>
         <div className="flex items-center gap-3">
           <span className="text-sm text-gray-500">{students.length} enrolled</span>
           <button
@@ -51,6 +59,23 @@ export function StudentsTable({ initial }: { initial: StudentRow[] }) {
             Add student
           </button>
         </div>
+      </div>
+
+      {/* Filter chips */}
+      <div className="flex gap-2">
+        {(['all', 'student', 'staff'] as Filter[]).map((f) => (
+          <button
+            key={f}
+            onClick={() => setFilter(f)}
+            className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
+              filter === f
+                ? 'bg-teal-600 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            {f === 'all' ? 'All' : f === 'student' ? 'Students' : 'Staff'}
+          </button>
+        ))}
       </div>
 
       {/* Table */}
@@ -71,14 +96,26 @@ export function StudentsTable({ initial }: { initial: StudentRow[] }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {students.map((s) => (
+            {visible.map((s) => (
               <tr key={s.id} className="hover:bg-gray-50 transition-colors">
                 <td className="px-4 py-3 font-medium text-gray-900">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     {s.name}
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold tracking-wide ${
+                      s.kind === 'staff'
+                        ? 'bg-teal-100 text-teal-800'
+                        : 'bg-slate-100 text-slate-700'
+                    }`}>
+                      {kindShort(s.kind)}
+                    </span>
                     {!s.auth_id && (
                       <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-yellow-100 text-yellow-700 border border-yellow-200">
                         Inactive
+                      </span>
+                    )}
+                    {s.roles.includes('front_desk') && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-teal-50 text-teal-700">
+                        Front desk
                       </span>
                     )}
                   </div>
@@ -105,10 +142,12 @@ export function StudentsTable({ initial }: { initial: StudentRow[] }) {
                 </td>
               </tr>
             ))}
-            {students.length === 0 && (
+            {visible.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-4 py-10 text-center text-gray-400">
-                  No students yet. Click &ldquo;Add student&rdquo; to get started.
+                  {students.length === 0
+                    ? 'No one on the roster yet. Click “Add student” to get started.'
+                    : `No ${filter === 'staff' ? 'staff' : 'students'} match the current filter.`}
                 </td>
               </tr>
             )}

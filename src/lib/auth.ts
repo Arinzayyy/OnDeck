@@ -124,3 +124,15 @@ export function makeAdminCookie(token: string): string {
 export function clearAdminCookie(): string {
   return `${ADMIN_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
 }
+
+// ─── Front desk access check ──────────────────────────────────────────────────
+
+export type SessionLike =
+  | { kind: 'admin' }
+  | { kind: 'student'; roles?: string[] };
+
+export function hasFrontDeskAccess(session: SessionLike | null): boolean {
+  if (!session) return false;
+  if (session.kind === 'admin') return true;
+  return Array.isArray(session.roles) && session.roles.includes('front_desk');
+}
