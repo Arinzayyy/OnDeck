@@ -28,6 +28,7 @@ export function AdminMonthCalendar({ shifts, year, month }: AdminMonthCalendarPr
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
   const [clearDate, setClearDate] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
+  const [dayDetail, setDayDetail] = useState<string | null>(null);
 
   const shiftsByDate = shifts.reduce<Record<string, Shift[]>>((acc, s) => {
     (acc[s.date] ??= []).push(s);
@@ -66,16 +67,22 @@ export function AdminMonthCalendar({ shifts, year, month }: AdminMonthCalendarPr
   function renderCell(cell: GridCell) {
     const dayShifts = shiftsByDate[cell.dateStr] ?? [];
     const hasShifts = dayShifts.length > 0;
+    const canOpenDay = cell.isCurrentMonth && hasShifts;
 
     return (
       <div
+        role={canOpenDay ? 'button' : undefined}
+        tabIndex={canOpenDay ? 0 : undefined}
+        title={canOpenDay ? 'View everyone scheduled this day' : undefined}
+        onClick={canOpenDay ? () => setDayDetail(cell.dateStr) : undefined}
+        onKeyDown={canOpenDay ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDayDetail(cell.dateStr); } } : undefined}
         className={`min-h-[80px] rounded-lg p-1.5 border text-xs ${
           !cell.isCurrentMonth
             ? 'border-transparent bg-transparent opacity-30'
             : cell.isToday
             ? 'border-teal-400 bg-teal-50'
             : 'border-gray-200 bg-white'
-        }`}
+        }${canOpenDay ? ' cursor-pointer hover:bg-gray-50' : ''}`}
       >
         <div className="flex items-start justify-between mb-1">
           <span
@@ -87,7 +94,10 @@ export function AdminMonthCalendar({ shifts, year, month }: AdminMonthCalendarPr
           </span>
           {hasShifts && cell.isCurrentMonth && (
             <button
-              onClick={() => setClearDate(cell.dateStr)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setClearDate(cell.dateStr);
+              }}
               title="Clear all shifts on this day"
               className="rounded p-0.5 text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors"
             >
@@ -106,7 +116,10 @@ export function AdminMonthCalendar({ shifts, year, month }: AdminMonthCalendarPr
           {dayShifts.slice(0, 3).map((s) => (
             <button
               key={s.id}
-              onClick={() => setSelectedShift(s)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedShift(s);
+              }}
               className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-left hover:bg-gray-100 transition-colors"
             >
               <span
@@ -120,9 +133,15 @@ export function AdminMonthCalendar({ shifts, year, month }: AdminMonthCalendarPr
             </button>
           ))}
           {dayShifts.length > 3 && (
-            <div className="px-1 text-[10px] text-gray-400">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setDayDetail(cell.dateStr);
+              }}
+              className="w-full rounded px-1 text-left text-[10px] font-medium text-teal-600 hover:bg-teal-50"
+            >
               +{dayShifts.length - 3} more
-            </div>
+            </button>
           )}
         </div>
       </div>
@@ -132,6 +151,15 @@ export function AdminMonthCalendar({ shifts, year, month }: AdminMonthCalendarPr
   const clearDayShifts = clearDate ? (shiftsByDate[clearDate] ?? []) : [];
   const clearDayLabel = clearDate
     ? new Date(clearDate + 'T00:00:00').toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+      })
+    : '';
+
+  const dayDetailShifts = dayDetail ? (shiftsByDate[dayDetail] ?? []) : [];
+  const dayDetailLabel = dayDetail
+    ? new Date(dayDetail + 'T00:00:00').toLocaleDateString('en-US', {
         weekday: 'long',
         month: 'long',
         day: 'numeric',
@@ -178,6 +206,52 @@ export function AdminMonthCalendar({ shifts, year, month }: AdminMonthCalendarPr
           <Button variant="danger" size="sm" onClick={handleClearDay} loading={clearing}>
             Clear Day
           </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={dayDetail !== null}
+        onClose={() => setDayDetail(null)}
+        title={dayDetailLabel ? `Shifts on ${dayDetailLabel}` : 'Shifts'}
+        size="md"
+      >
+        <div className="space-y-1">
+          {dayDetailShifts.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => {
+                setDayDetail(null);
+                setSelectedShift(s);
+              }}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-50 transition-colors"
+            >
+              <span
+                className={`h-2 w-2 flex-shrink-0 rounded-full ${
+                  STATUS_DOT[s.status] ?? 'bg-gray-400'
+                }`}
+              />
+              <span className="flex-1 font-medium text-gray-800">
+                {s.student?.name ?? '—'}
+              </span>
+              <span className="text-gray-500">
+                {s.start_time}
+                {s.end_time ? ` – ${s.end_time}` : ''}
+              </span>
+              <span
+                className={`ml-1 inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium capitalize ${
+                  s.status === 'approved'
+                    ? 'bg-teal-100 text-teal-800'
+                    : s.status === 'pending'
+                    ? 'bg-yellow-100 text-yellow-800'
+                    : s.status === 'cancelled'
+                    ? 'bg-red-100 text-red-700'
+                    : 'bg-orange-100 text-orange-700'
+                }`}
+              >
+                {s.status.replace('_', ' ')}
+              </span>
+            </button>
+          ))}
         </div>
       </Modal>
 
