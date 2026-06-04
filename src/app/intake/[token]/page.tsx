@@ -13,7 +13,7 @@ const FIELD_DEFS = [
 type FieldKey = 'name' | 'email' | 'address' | 'phone' | 'preferred_pharmacy';
 type Fields = Record<FieldKey, boolean>;
 
-type PageState = 'loading' | 'inactive' | 'active' | 'submitted';
+type PageState = 'loading' | 'inactive' | 'closed' | 'active' | 'submitted';
 
 interface IntakePageProps {
   params: { token: string };
@@ -26,6 +26,7 @@ export default function IntakePage({ params }: IntakePageProps) {
   const [fields, setFields] = useState<Fields>({
     name: false, email: false, address: false, phone: false, preferred_pharmacy: false,
   });
+  const [closesAt, setClosesAt] = useState<string | null>(null);
   const [values, setValues] = useState<Partial<Record<FieldKey, string>>>({});
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldKey, string>>>({});
   const [submitError, setSubmitError] = useState('');
@@ -37,7 +38,8 @@ export default function IntakePage({ params }: IntakePageProps) {
         if (res.status === 410 || !res.ok) { setPageState('inactive'); return; }
         const data = await res.json();
         setFields(data.fields ?? {});
-        setPageState('active');
+        setClosesAt(data.closes_at ?? null);
+        setPageState(data.is_open ? 'active' : 'closed');
       })
       .catch(() => setPageState('inactive'));
   }, [token]);
@@ -81,6 +83,12 @@ export default function IntakePage({ params }: IntakePageProps) {
       });
 
       if (res.status === 410) { setPageState('inactive'); return; }
+      if (res.status === 403) {
+        const data = await res.json();
+        if (data.code === 'closed') { setPageState('closed'); return; }
+        setSubmitError(data.error ?? 'Something went wrong. Please try again.');
+        return;
+      }
       if (!res.ok) {
         const data = await res.json();
         if (data.field) {
@@ -126,6 +134,22 @@ export default function IntakePage({ params }: IntakePageProps) {
           </div>
         )}
 
+        {/* Closed */}
+        {pageState === 'closed' && (
+          <div className="text-center py-8 space-y-3">
+            <div className="flex justify-center">
+              <svg className="h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+              </svg>
+            </div>
+            <h2 className="text-lg font-semibold text-gray-800">Intake is currently closed</h2>
+            <p className="text-sm text-gray-500">
+              Please let the front desk know you&rsquo;re ready,<br />
+              and they&rsquo;ll reopen it for you.
+            </p>
+          </div>
+        )}
+
         {/* Thank-you */}
         {pageState === 'submitted' && (
           <div className="text-center py-4 space-y-4">
@@ -148,6 +172,14 @@ export default function IntakePage({ params }: IntakePageProps) {
         {/* Active form */}
         {pageState === 'active' && (
           <form onSubmit={handleSubmit} noValidate className="space-y-5">
+            {closesAt && (
+              <div className="text-center">
+                <span className="inline-block rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-500">
+                  Closes at {new Date(closesAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                </span>
+              </div>
+            )}
+
             <div>
               <h2 className="text-xl font-semibold text-gray-900">Welcome to Tri-Valley Urgent Care</h2>
               <p className="mt-1 text-sm text-gray-500">

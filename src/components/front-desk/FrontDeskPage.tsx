@@ -1,6 +1,23 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { NotesTab } from './NotesTab';
+
+// ─── Window helpers ────────────────────────────────────────────────────────────
+
+function formatWindowCountdown(closesAt: string): string {
+  const diff = new Date(closesAt).getTime() - Date.now();
+  if (diff <= 0) return 'closing…';
+  const totalSecs = Math.ceil(diff / 1000);
+  const m = Math.floor(totalSecs / 60);
+  const s = totalSecs % 60;
+  if (m > 0) return `${m}m ${s.toString().padStart(2, '0')}s`;
+  return `${s}s`;
+}
+
+function formatCloseTime(closesAt: string): string {
+  return new Date(closesAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
 
 // ─── Field schema ──────────────────────────────────────────────────────────────
 
@@ -31,6 +48,7 @@ interface ActiveForm {
   id: string;
   token: string;
   fields: Fields;
+  accepting_until: string | null;
 }
 
 interface SubmissionRow {
@@ -103,19 +121,67 @@ function IntakeLinkTab() {
   const [saving, setSaving] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [windowBusy, setWindowBusy] = useState(false);
+  const [windowTick, setWindowTick] = useState(0);
+  const windowIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const togglesInitialized = useRef(false);
 
-  useEffect(() => {
-    fetch('/api/intakes/forms')
-      .then((r) => r.json())
-      .then((data) => {
-        const form = data.forms?.[0] ?? null;
-        setActiveForm(form);
+  const loadForm = useCallback(async () => {
+    try {
+      const res = await fetch('/api/intakes/forms');
+      const data = await res.json();
+      const form: ActiveForm | null = data.forms?.[0] ?? null;
+      setActiveForm(form);
+      if (!togglesInitialized.current) {
         if (!form) setEditMode(true);
         if (form) setToggles({ ...DEFAULT_FIELDS, ...form.fields });
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+        togglesInitialized.current = true;
+      }
+    } catch {}
   }, []);
+
+  useEffect(() => {
+    loadForm().finally(() => setLoading(false));
+  }, [loadForm]);
+
+  // Countdown: ticks every second while window is open; re-fetches form on expiry
+  useEffect(() => {
+    if (windowIntervalRef.current) {
+      clearInterval(windowIntervalRef.current);
+      windowIntervalRef.current = null;
+    }
+    if (!activeForm?.accepting_until) return;
+    const closesAt = new Date(activeForm.accepting_until).getTime();
+    windowIntervalRef.current = setInterval(() => {
+      if (Date.now() >= closesAt) {
+        clearInterval(windowIntervalRef.current!);
+        windowIntervalRef.current = null;
+        loadForm();
+      } else {
+        setWindowTick((t) => t + 1);
+      }
+    }, 1000);
+    return () => {
+      if (windowIntervalRef.current) clearInterval(windowIntervalRef.current);
+    };
+  }, [activeForm?.accepting_until, loadForm]);
+
+  async function handleWindowToggle(open: boolean) {
+    setWindowBusy(true);
+    try {
+      const res = await fetch('/api/intakes/form/window', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ open }),
+      });
+      const data = await res.json();
+      if (!res.ok) return;
+      setActiveForm((f) => f ? { ...f, accepting_until: data.accepting_until } : f);
+    } catch {}
+    finally {
+      setWindowBusy(false);
+    }
+  }
 
   async function handleSave() {
     setSaveError('');
@@ -132,7 +198,7 @@ function IntakeLinkTab() {
       });
       const data = await res.json();
       if (!res.ok) { setSaveError(data.error ?? 'Failed to save'); return; }
-      setActiveForm({ id: data.id, token: data.token, fields: data.fields });
+      setActiveForm((prev) => ({ ...prev, id: data.id, token: data.token, fields: data.fields, accepting_until: prev?.accepting_until ?? null }));
       setEditMode(false);
     } catch {
       setSaveError('Something went wrong. Please try again.');
@@ -164,14 +230,66 @@ function IntakeLinkTab() {
     ? FIELD_DEFS.filter((f) => activeForm.fields[f.key]).map((f) => f.label)
     : [];
 
+  const isWindowOpen = !!(
+    activeForm?.accepting_until && new Date(activeForm.accepting_until) > new Date()
+  );
+
+  // Status card shown when a form exists (regardless of edit/link mode)
+  const statusCard = activeForm ? (
+    <div className={`rounded-xl p-4 flex items-center gap-4 ${
+      isWindowOpen
+        ? 'bg-teal-50 border border-teal-200'
+        : 'bg-gray-50 border border-gray-200'
+    }`}>
+      <span className="text-xl flex-shrink-0">{isWindowOpen ? '🟢' : '⚪'}</span>
+      <div className="flex-1 min-w-0">
+        {isWindowOpen ? (
+          <>
+            <p className="font-semibold text-teal-800">
+              {/* windowTick forces re-render each second */}
+              Intake open &middot; closes in {windowTick >= 0 && formatWindowCountdown(activeForm.accepting_until!)}
+            </p>
+            <p className="text-sm text-teal-700">
+              Patients can submit until {formatCloseTime(activeForm.accepting_until!)}.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="font-semibold text-gray-800">Intake closed</p>
+            <p className="text-sm text-gray-500">Open the window when you&rsquo;re ready to accept a patient.</p>
+          </>
+        )}
+      </div>
+      {isWindowOpen ? (
+        <button
+          onClick={() => handleWindowToggle(false)}
+          disabled={windowBusy}
+          className="flex-shrink-0 px-5 py-2.5 rounded-lg font-medium text-sm text-teal-700 hover:bg-teal-100 transition-colors disabled:opacity-50"
+        >
+          Close now
+        </button>
+      ) : (
+        <button
+          onClick={() => handleWindowToggle(true)}
+          disabled={windowBusy}
+          className="flex-shrink-0 bg-teal-600 hover:bg-teal-700 text-white px-5 py-2.5 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Open for intake
+        </button>
+      )}
+    </div>
+  ) : null;
+
   // Toggle / edit panel
   if (!activeForm || editMode) {
     return (
       <div className="max-w-xl space-y-5">
+        {statusCard}
+
         {editMode && activeForm && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            Saving a new set of fields will replace the current link. Anyone holding the old link will see a &ldquo;no longer active&rdquo; message.
-          </div>
+          <p className="text-sm text-gray-500">
+            Your intake link will stay the same — only the fields patients see will update.
+          </p>
         )}
 
         <div>
@@ -211,7 +329,7 @@ function IntakeLinkTab() {
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
             )}
-            {saving ? 'Saving…' : 'Save & generate link'}
+            {saving ? 'Saving…' : activeForm ? 'Save changes' : 'Save & generate link'}
           </button>
           {editMode && activeForm && (
             <button
@@ -229,6 +347,8 @@ function IntakeLinkTab() {
   // Link view
   return (
     <div className="max-w-xl space-y-5">
+      {statusCard}
+
       <div>
         <h2 className="text-base font-semibold text-gray-900">Your patient intake link</h2>
         <p className="mt-1 text-sm text-gray-500">
@@ -259,15 +379,14 @@ function IntakeLinkTab() {
       </div>
 
       <p className="text-sm text-gray-500">
-        Share this link with patients however works best — text it to them, type it into their phone, or write it on a card.
-        Each open loads a fresh blank form, so the same link works for every patient.
+        This is your permanent intake link — share it however works best (text it to patients, write it on a card, print it as a QR code at the desk). The URL never changes, even when you edit which fields are collected.
       </p>
 
       <button
         onClick={() => { setEditMode(true); setToggles({ ...DEFAULT_FIELDS, ...activeForm.fields }); setSaveError(''); }}
         className="text-sm font-medium text-teal-600 hover:text-teal-800 transition-colors underline underline-offset-2"
       >
-        Change which fields are collected
+        Edit which fields are collected
       </button>
     </div>
   );
@@ -523,8 +642,14 @@ function SubmissionsTab() {
 
 // ─── Main FrontDeskPage ────────────────────────────────────────────────────────
 
+const TAB_LABELS: Record<'link' | 'submissions' | 'notes', string> = {
+  link: 'Intake link',
+  submissions: 'Submissions',
+  notes: 'Notes',
+};
+
 export function FrontDeskPage() {
-  const [tab, setTab] = useState<'link' | 'submissions'>('link');
+  const [tab, setTab] = useState<'link' | 'submissions' | 'notes'>('link');
 
   return (
     <div className="space-y-6">
@@ -536,7 +661,7 @@ export function FrontDeskPage() {
       {/* Tabs */}
       <div className="border-b border-gray-200">
         <nav className="-mb-px flex gap-6">
-          {(['link', 'submissions'] as const).map((t) => (
+          {(['link', 'submissions', 'notes'] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -546,7 +671,7 @@ export function FrontDeskPage() {
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
             >
-              {t === 'link' ? 'Intake link' : 'Submissions'}
+              {TAB_LABELS[t]}
             </button>
           ))}
         </nav>
@@ -554,7 +679,9 @@ export function FrontDeskPage() {
 
       {/* Tab content */}
       <div>
-        {tab === 'link' ? <IntakeLinkTab /> : <SubmissionsTab />}
+        {tab === 'link' && <IntakeLinkTab />}
+        {tab === 'submissions' && <SubmissionsTab />}
+        {tab === 'notes' && <NotesTab />}
       </div>
     </div>
   );

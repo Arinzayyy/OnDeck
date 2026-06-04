@@ -143,15 +143,25 @@ create trigger settings_updated_at
 -- ─── Intake forms ─────────────────────────────────────────────────────────────
 -- The reusable intake form. Typically just one active row at a time.
 -- The patient-facing URL embeds this row's token.
+-- accepting_until: window closes at this time; null = closed
 create table if not exists intake_forms (
   id              uuid primary key default gen_random_uuid(),
   token           text not null unique,
   fields          jsonb not null,
   created_by      uuid,
   created_by_kind text not null check (created_by_kind in ('admin', 'student')),
+  updated_by      uuid,
   active          boolean not null default true,
+  accepting_until timestamptz,
+  updated_at      timestamptz not null default now(),
   created_at      timestamptz not null default now()
 );
+
+-- Upgrade path for existing databases
+alter table intake_forms
+  add column if not exists updated_by      uuid,
+  add column if not exists accepting_until timestamptz,
+  add column if not exists updated_at      timestamptz not null default now();
 
 -- ─── Intake submissions ───────────────────────────────────────────────────────
 -- One row per patient submission. Auto-expires so PHI doesn't linger.
@@ -175,3 +185,20 @@ create index if not exists intake_submissions_expires_at_idx on intake_submissio
 -- wrong client, PHI stays locked.
 alter table intake_forms       enable row level security;
 alter table intake_submissions enable row level security;
+
+-- ─── Front desk notes ─────────────────────────────────────────────────────────
+-- Shared notepad for handoffs and reminders. Not patient data — no TTL.
+-- author_name is denormalized so old notes still show the author after roster changes.
+create table if not exists front_desk_notes (
+  id          uuid primary key default gen_random_uuid(),
+  body        text not null check (length(body) between 1 and 2000),
+  author_id   uuid,
+  author_kind text not null check (author_kind in ('admin', 'student')),
+  author_name text not null,
+  pinned      boolean not null default false,
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists front_desk_notes_sort_idx on front_desk_notes (pinned desc, created_at desc);
+
+alter table front_desk_notes enable row level security;

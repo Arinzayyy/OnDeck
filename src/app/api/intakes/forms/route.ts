@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   const db = createServerClient();
   const { data, error } = await db
     .from('intake_forms')
-    .select('id, token, fields, created_at, created_by_kind')
+    .select('id, token, fields, accepting_until, updated_at, created_at, created_by_kind')
     .eq('active', true)
     .order('created_at', { ascending: false });
 
@@ -37,7 +37,8 @@ export async function GET(req: NextRequest) {
  * POST /api/intakes/forms
  * Auth: admin or front desk student
  * Body: { fields: { name: bool, email: bool, address: bool, phone: bool, preferred_pharmacy: bool } }
- * Deactivates existing active forms, creates a new one, returns the URL.
+ * Singleton model: updates fields in-place on the existing row (token never changes).
+ * Only generates a new token on first-ever setup.
  */
 export async function POST(req: NextRequest) {
   const auth = await authorize(req);
@@ -65,25 +66,47 @@ export async function POST(req: NextRequest) {
 
   const db = createServerClient();
 
-  // Deactivate all existing active forms
-  await db.from('intake_forms').update({ active: false }).eq('active', true);
-
-  // Generate a random URL-safe token
-  const token = randomBytes(24).toString('base64url');
-
-  const { data, error } = await db
+  // Look for an existing row to update (singleton — at most one)
+  const { data: existing } = await db
     .from('intake_forms')
-    .insert({
-      token,
-      fields,
-      created_by: auth.id,
-      created_by_kind: auth.kind,
-      active: true,
-    })
-    .select('id, token, fields')
-    .single();
+    .select('id, token')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  let data;
+  if (existing) {
+    // Update fields in place — KEEP the existing token so the URL never changes
+    const { data: updated, error: updateError } = await db
+      .from('intake_forms')
+      .update({
+        fields,
+        updated_by: auth.id,
+        updated_at: new Date().toISOString(),
+        active: true,
+      })
+      .eq('id', existing.id)
+      .select('id, token, fields')
+      .single();
+    if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
+    data = updated;
+  } else {
+    // First-time setup — generate a token that will never change
+    const token = randomBytes(24).toString('base64url');
+    const { data: inserted, error: insertError } = await db
+      .from('intake_forms')
+      .insert({
+        token,
+        fields,
+        created_by: auth.id,
+        created_by_kind: auth.kind,
+        active: true,
+      })
+      .select('id, token, fields')
+      .single();
+    if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
+    data = inserted;
+  }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? '';
   return NextResponse.json({

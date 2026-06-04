@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
 import { SUBMISSION_TTL_HOURS } from '@/lib/intakes';
 
-// Simple in-memory rate limiter — good enough for now; 30 submissions/hour/IP
+// Simple in-memory rate limiter — 5 submissions/hour/IP.
+// If a patient fails this many times in an hour, something's wrong (typo'd email,
+// network issue, etc.) — front desk should collect the info in person instead.
 const ipHits = new Map<string, { count: number; windowStart: number }>();
-const RATE_LIMIT = 30;
+const RATE_LIMIT = 5;
 const RATE_WINDOW_MS = 60 * 60 * 1000;
 
 function isRateLimited(ip: string): boolean {
@@ -39,13 +41,18 @@ export async function GET(
   const db = createServerClient();
   const { data } = await db
     .from('intake_forms')
-    .select('fields, active')
+    .select('fields, active, accepting_until')
     .eq('token', params.token)
     .single();
 
   if (!data || !data.active) return INACTIVE_RESPONSE;
 
-  return NextResponse.json({ fields: data.fields });
+  const now = new Date();
+  const acceptingUntil = data.accepting_until ? new Date(data.accepting_until) : null;
+  const isOpen = acceptingUntil !== null && acceptingUntil > now;
+  const closesAt = isOpen ? data.accepting_until : null;
+
+  return NextResponse.json({ fields: data.fields, is_open: isOpen, closes_at: closesAt });
 }
 
 /**
@@ -71,11 +78,19 @@ export async function POST(
   // Re-look-up form to prevent submissions to stale forms
   const { data: form } = await db
     .from('intake_forms')
-    .select('id, fields, active')
+    .select('id, fields, active, accepting_until')
     .eq('token', params.token)
     .single();
 
   if (!form || !form.active) return INACTIVE_RESPONSE;
+
+  // Enforce intake window — this is the security boundary
+  if (!form.accepting_until || new Date(form.accepting_until) <= new Date()) {
+    return NextResponse.json(
+      { error: 'Intake is currently closed. Please ask the front desk to reopen it.', code: 'closed' },
+      { status: 403 }
+    );
+  }
 
   const body = await req.json().catch(() => null);
   if (!body) return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
