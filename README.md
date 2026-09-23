@@ -29,6 +29,17 @@ A full-stack clinic shift scheduling platform for dental/health programs. Studen
 - **Admin dashboard** — stats, pending approvals list, master calendar, callouts log, student roster
 - **Settings** — live-editable max_per_day, max_concurrent, auto_approve toggle
 
+## Patient intake
+
+A lightweight, privacy-minimizing flow for collecting patient scheduling details:
+
+- **Temporary link:** front desk opens a time-boxed intake window and patients submit through a public `/intake/[token]` page, no account required.
+- **Field allowlist:** only the fields a form enables are accepted (name, email, address, phone, preferred pharmacy); anything else in the request body is dropped.
+- **Short-lived by design:** each submission carries a 4-hour TTL and is purged so patient data is not retained long-term.
+- **Locked down:** Row-Level Security denies anonymous and authenticated access; only server routes using the service role (admin or front-desk) can read submissions.
+
+Roadmap: a scheduled TTL purge (cron) to enforce expiry independently of reads, and a shared-store rate limiter for multi-instance deployments.
+
 ---
 
 ## Quick Start
@@ -173,23 +184,3 @@ To enable real OCR later:
 3. Redeploy (or trigger a redeployment from the Vercel dashboard).
 
 No code changes are required — the route detects the key at runtime and switches to the Claude path automatically.
-
----
-
-## Upgrading an existing deployment
-
-If you deployed OnDeck before the admin management UI was added, run this idempotent SQL in the Supabase SQL editor to bring the schema up to date:
-
-```sql
--- Add created_at to admins table (safe to run on existing data)
-alter table admins
-  add column if not exists created_at timestamptz not null default now();
-```
-
-After running this, re-deploy the app. Existing admin sessions will be invalidated (the JWT format changed to include the admin `id` claim) — admins will need to sign in once to get a fresh token.
-
----
-
-## OCR Design
-
-`POST /api/ocr` checks for `ANTHROPIC_API_KEY` at request time. If present, it sends the uploaded image to `claude-opus-4-6` with a detailed system prompt instructing it to return a JSON object with date, times, clinic, notes, confidence, and raw transcription. The system prompt uses `cache_control: {type: "ephemeral"}` so repeated uploads share the prompt cache and reduce cost. Adaptive thinking (`thinking: {type: "adaptive"}`) is enabled for highest accuracy. If the key is absent, a demo result is returned immediately with `demoMode: true`, which the modal uses to display a banner.
